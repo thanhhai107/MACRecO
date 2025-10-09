@@ -147,7 +147,7 @@ class CollaborationSystem(System):
                 observation = self.interpreter.invoke(argument=argument, json_mode=self.manager.json_mode)
                 log_head = f':violet[Response from] :red[Interpreter] :violet[with] :blue[{argument}]:violet[:]\n- '
         else:
-            observation = 'Invalid Action type or format. Valid Action examples are {self.manager.valid_action_example}.'
+            observation = f'Invalid Action type or format. Valid Action examples are {self.manager.valid_action_example}.'
 
         self.scratchpad += f'\nObservation: {observation}'
 

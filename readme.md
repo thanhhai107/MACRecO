@@ -36,7 +36,7 @@ https://github.com/wzf2000/MACRec/assets/27494406/0acb4718-5f07-41fd-a06b-d9fb36
     - `tasks/`: For external function calls (e.g. main.py). **Note needs to be distinguished from recommended tasks.**
         - `base.py`: The base task class.
         - `calculate.py`: The task for calculating the metrics.
-        - `chat.py`: The task for chatting with the `ChatSystem`.
+        - `chat.py`: The task for chatting with the `CollaborationSystem`.
         - **`evaluate.py`**: The task for evaluating the system on the rating prediction or sequence recommendation tasks. The task is inherited from `generation.py`.
         - `feedback.py`: The task for selecting the feedback for the *Reflector*. The task is inherited from `generation.py`.
         - `generation.py`: The basic task for generating the answers from a dataset.

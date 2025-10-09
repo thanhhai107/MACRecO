@@ -4,7 +4,7 @@ from transformers import AutoTokenizer
 from langchain.prompts import PromptTemplate
 
 from macrec.agents.base import Agent
-from macrec.llms import AnyOpenAILLM
+from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM
 from macrec.utils import format_step, run_once
 
 class Manager(Agent):
@@ -24,10 +24,19 @@ class Manager(Agent):
         self.json_mode = self.action_llm.json_mode
         if isinstance(self.thought_llm, AnyOpenAILLM):
             self.thought_enc = tiktoken.encoding_for_model(self.thought_llm.model_name)
+        elif isinstance(self.thought_llm, (GeminiLLM, OpenRouterLLM)):
+            # For Gemini and OpenRouter, use tiktoken with a default model for tokenization
+            # This is an approximation since these models may use different tokenizers
+            self.thought_enc = tiktoken.get_encoding("cl100k_base")
         else:
             self.thought_enc = AutoTokenizer.from_pretrained(self.thought_llm.model_name)
+            
         if isinstance(self.action_llm, AnyOpenAILLM):
             self.action_enc = tiktoken.encoding_for_model(self.action_llm.model_name)
+        elif isinstance(self.action_llm, (GeminiLLM, OpenRouterLLM)):
+            # For Gemini and OpenRouter, use tiktoken with a default model for tokenization
+            # This is an approximation since these models may use different tokenizers
+            self.action_enc = tiktoken.get_encoding("cl100k_base")
         else:
             self.action_enc = AutoTokenizer.from_pretrained(self.action_llm.model_name)
 

@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 
 from macrec.tasks.base import Task
 from macrec.utils import init_openai_api, read_json
-from macrec.systems import ReActSystem, ReflectionSystem, AnalyseSystem, CollaborationSystem
+from macrec.systems import CollaborationSystem
 
 class GenerationTask(Task):
     @staticmethod
@@ -16,7 +16,7 @@ class GenerationTask(Task):
         parser.add_argument('--api_config', type=str, default='config/api-config.json', help='Api configuration file')
         parser.add_argument('--dataset', type=str, default='None', help='Dataset name')
         parser.add_argument('--data_file', type=str, required=True, help='Dataset file')
-        parser.add_argument('--system', type=str, default='react', choices=['react', 'reflection', 'analyse', 'collaboration'], help='System name')
+        parser.add_argument('--system', type=str, default='collaboration', choices=['collaboration'], help='System name')
         parser.add_argument('--system_config', type=str, required=True, help='System configuration file')
         parser.add_argument('--task', type=str, default='rp', choices=['rp', 'sr', 'gen'], help='Task name')
         parser.add_argument('--max_his', type=int, default=10, help='Max history length')
@@ -64,13 +64,7 @@ class GenerationTask(Task):
             raise NotImplementedError
 
     def get_system(self, system: str, system_config: str):
-        if system == 'react':
-            self.system = ReActSystem(config_path=system_config, **self.system_kwargs)
-        elif system == 'reflection':
-            self.system = ReflectionSystem(config_path=system_config, **self.system_kwargs)
-        elif system == 'analyse':
-            self.system = AnalyseSystem(config_path=system_config, **self.system_kwargs)
-        elif system == 'collaboration':
+        if system == 'collaboration':
             self.system = CollaborationSystem(config_path=system_config, **self.system_kwargs)
         else:
             raise NotImplementedError

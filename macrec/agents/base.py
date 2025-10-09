@@ -4,7 +4,7 @@ from loguru import logger
 from typing import Any, Optional, TYPE_CHECKING
 from langchain.prompts import PromptTemplate
 
-from macrec.llms import BaseLLM, AnyOpenAILLM, OpenSourceLLM
+from macrec.llms import BaseLLM, AnyOpenAILLM, OpenSourceLLM, GeminiLLM, OpenRouterLLM
 from macrec.tools import TOOL_MAP, Tool
 from macrec.utils import run_once, format_history, read_prompts
 
@@ -80,9 +80,16 @@ class Agent(ABC):
                 config = json.load(f)
         model_type = config['model_type']
         del config['model_type']
-        if model_type != 'api':
+        if model_type == 'opensource':
             return OpenSourceLLM(**config)
+        elif model_type == 'openai':
+            return AnyOpenAILLM(**config)
+        elif model_type == 'gemini':
+            return GeminiLLM(**config)
+        elif model_type == 'openrouter':
+            return OpenRouterLLM(**config)
         else:
+            # For backward compatibility, default to OpenAI if model_type is 'api'
             return AnyOpenAILLM(**config)
 
 class ToolAgent(Agent):

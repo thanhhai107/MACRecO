@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 
 from macrec.tasks.generation import GenerationTask
 from macrec.utils import str2list, NumpyEncoder
-from macrec.systems import ReflectionSystem
+from macrec.systems import CollaborationSystem
 from macrec.evaluation import MetricDict, HitRatioAt, NDCGAt, RMSE, Accuracy, MAE
 
 class EvaluateTask(GenerationTask):
@@ -74,8 +74,8 @@ class EvaluateTask(GenerationTask):
 
     def after_step(self, answer: Any, gt_answer: int | float | str, step: int, record: dict) -> None:
         record[f'Answer_{step}'] = answer
-        if hasattr(self.system, 'reflected') and self.system.reflected and self.system.reflector.keep_reflections:
-            assert isinstance(self.system, ReflectionSystem)
+        if hasattr(self.system, 'reflected') and self.system.reflected and hasattr(self.system, 'reflector') and self.system.reflector and self.system.reflector.keep_reflections:
+            assert isinstance(self.system, CollaborationSystem)
             logger.trace(f"Reflection input: {self.system.reflector.reflection_input}")
             logger.trace(f"Reflection output: {self.system.reflector.reflection_output}")
 

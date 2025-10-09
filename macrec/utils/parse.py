@@ -15,6 +15,25 @@ def parse_action(action: str, json_mode: bool = False) -> tuple[str, Any]:
     """
     if json_mode:
         try:
+            # Remove markdown code block if present
+            if action.strip().startswith('```json'):
+                # Find the JSON content between ```json and ```
+                start = action.find('```json') + 7
+                end = action.rfind('```')
+                if end > start:
+                    action = action[start:end].strip()
+                else:
+                    # Fallback: remove ```json from start
+                    action = action[start:].strip()
+            elif action.strip().startswith('```'):
+                # Handle case where it's just ``` without json
+                start = action.find('```') + 3
+                end = action.rfind('```')
+                if end > start:
+                    action = action[start:end].strip()
+                else:
+                    action = action[start:].strip()
+            
             json_action = json.loads(action)
             return json_action['type'], json_action['content']
         except Exception:

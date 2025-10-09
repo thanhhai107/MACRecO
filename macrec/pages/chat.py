@@ -1,10 +1,10 @@
 import streamlit as st
 from loguru import logger
 
-from macrec.systems import ChatSystem, CollaborationSystem
+from macrec.systems import CollaborationSystem
 from macrec.utils import add_chat_message
 
-def chat_page(system: ChatSystem | CollaborationSystem) -> None:
+def chat_page(system: CollaborationSystem) -> None:
     for chat in st.session_state.chat_history:
         if isinstance(chat['message'], str):
             st.chat_message(chat['role']).markdown(chat['message'])

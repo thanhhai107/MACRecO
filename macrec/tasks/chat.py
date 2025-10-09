@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 
 from macrec.tasks.base import Task
-from macrec.systems import ChatSystem
+from macrec.systems import CollaborationSystem
 from macrec.utils import init_openai_api, read_json
 
 class ChatTask(Task):
@@ -14,7 +14,7 @@ class ChatTask(Task):
 
     def get_system(self, system: str, config_path: str):
         if system == 'chat':
-            return ChatSystem(config_path=config_path, task='chat')
+            return CollaborationSystem(config_path=config_path, task='chat')
         else:
             raise NotImplementedError
 
