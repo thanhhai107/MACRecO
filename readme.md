@@ -1,15 +1,7 @@
 ## MACRec: a Multi-Agent Collaboration Framework for Recommendation
 
-This repository contains the official implementation of our SIGIR 2024 demo paper:
-- [Wang, Zhefan, Yuanqing Yu, et al. "MACRec: A Multi-Agent Collaboration Framework for Recommendation". SIGIR 2024.](https://dl.acm.org/doi/abs/10.1145/3626772.3657669)
-
 The video demo is available at [Video Demo](https://cloud.tsinghua.edu.cn/f/bb41245e81f744fcbd4c/?dl=1).
 
-**A demo of using MACRec**:
-
-https://github.com/wzf2000/MACRec/assets/27494406/0acb4718-5f07-41fd-a06b-d9fb36a7bb1b
-
-![framework](./assets/MAC-workflow.png)
 
 ### File structure
 
@@ -29,10 +21,6 @@ https://github.com/wzf2000/MACRec/assets/27494406/0acb4718-5f07-41fd-a06b-d9fb36
     - `systems/`: The multi-agent system classes are defined here.
         - `base.py`: The base system class.
         - `collaboration.py`: The collaboration system class. **We recommend using this class for most of the tasks.**
-        - `analyse.py`: ***(Deprecated)*** The system with a *Manager* and an *Analyst*. Do not support the `chat` task.
-        - `chat.py`: ***(Deprecated)*** The system with a *Manager*, a *Searcher*, and a *Task Interpreter*. Only support the `chat` task.
-        - `react.py`: ***(Deprecated)*** The system with a single *Manager*. Do not support the `chat` task.
-        - `reflection.py`: ***(Deprecated)*** The system with a *Manager* and a *Reflector*. Do not support the `chat` task.
     - `tasks/`: For external function calls (e.g. main.py). **Note needs to be distinguished from recommended tasks.**
         - `base.py`: The base task class.
         - `calculate.py`: The task for calculating the metrics.
@@ -54,8 +42,6 @@ https://github.com/wzf2000/MACRec/assets/27494406/0acb4718-5f07-41fd-a06b-d9fb36
         - `agent_prompt/`: The prompts for each agent.
         - `data_prompt/`: The prompts used to prepare the input data for each task.
         - `manager_prompt/`: The prompts for the *Manager* in the `CollaborationSystem` with different configurations.
-        - `old_system_prompt/`: ***(Deprecated)*** The prompts for other systems' agents.
-        - `task_agent_prompt/`: ***(Deprecated)*** The task-specific prompts for agents in other systems.
     - `systems/`: The configuration for each system. Every system has a configuration folder.
     - `tools/`: The configuration for each tool.
     - `training/`: Some configuration for the PPO or other RL algorithms training.
@@ -108,15 +94,3 @@ streamlit run web_demo.py
 Then open the browser and visit `http://localhost:8501/` to use the web demo.
 
 Please note that the systems utilizing open-source LLMs or other language models may require a significant amount of memory. These systems have been disabled on machines without CUDA support.
-
-### Citation
-If you find our work useful, please do not save your star and cite our work:
-```
-@inproceedings{wang2024macrec,
-  title={MACRec: A Multi-Agent Collaboration Framework for Recommendation},
-  author={Wang, Zhefan and Yu, Yuanqing and Zheng, Wendi and Ma, Weizhi and Zhang, Min},
-  booktitle={Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval},
-  pages={2760--2764},
-  year={2024}
-}
-```
