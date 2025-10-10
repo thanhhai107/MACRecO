@@ -4,6 +4,7 @@ from loguru import logger
 from typing import Any
 from transformers import pipeline
 from transformers.pipelines import Pipeline
+import tiktoken
 
 from macrec.llms.basellm import BaseLLM
 
@@ -62,6 +63,7 @@ class OpenSourceLLM(BaseLLM):
             `temperature` (`float`, optional): The temperature of the generation. Defaults to `0.9`.
             `top_p` (`float`, optional): The top-p of the generation. Defaults to `1.0`.
         """
+        super().__init__()
         self.json_mode = json_mode
         if device == 'auto':
             self.pipe = pipeline("text-generation", model=model_path, device_map='auto')
@@ -80,15 +82,33 @@ class OpenSourceLLM(BaseLLM):
         self.max_tokens = max_new_tokens
         self.max_context_length: int = 16384 if '16k' in model_path else 32768 if '32k' in model_path else 4096
 
-    def __call__(self, prompt: str, *args, **kwargs) -> str:
+    def __call__(self, prompt: str, call_type: str = "unknown", *args, **kwargs) -> str:
         """Forward pass of the OpenSource LLM. If json_mode is enabled, the output of the LLM will be formatted into JSON by `MyJsonFormer`.
 
         Args:
             `prompt` (`str`): The prompt to feed into the LLM.
+            `call_type` (`str`): Type of call for token tracking.
         Returns:
             `str`: The OpenSource LLM output.
         """
         if self.json_mode:
-            return self.pipe.invoke(prompt)
+            output = self.pipe.invoke(prompt)
         else:
-            return self.pipe.invoke(prompt, return_full_text=False)[0]['generated_text']
+            output = self.pipe.invoke(prompt, return_full_text=False)[0]['generated_text']
+        
+        # Estimate token count for open source models
+        # For open source models, we estimate tokens using tiktoken
+        try:
+            # Try to use cl100k_base encoding (GPT-4 style) as a reasonable approximation
+            encoding = tiktoken.get_encoding("cl100k_base")
+            input_tokens = len(encoding.encode(prompt))
+            output_tokens = len(encoding.encode(output))
+            self.track_tokens(input_tokens, output_tokens, call_type)
+        except Exception as e:
+            # Fallback to rough estimation: ~4 characters per token
+            input_tokens = len(prompt) // 4
+            output_tokens = len(output) // 4
+            self.track_tokens(input_tokens, output_tokens, call_type)
+            logger.debug(f"Token estimation fallback used for open source model: {e}")
+        
+        return output

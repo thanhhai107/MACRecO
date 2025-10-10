@@ -85,12 +85,12 @@ class Manager(Agent):
     def _prompt_thought(self, **kwargs) -> str:
         thought_prompt = self._build_manager_prompt(**kwargs)
         self._log_prompt(thought_prompt)
-        thought_response = self.thought_llm(thought_prompt)
+        thought_response = self.thought_llm(thought_prompt, call_type="manager_thought")
         return format_step(thought_response)
 
     def _prompt_action(self, **kwargs) -> str:
         action_prompt = self._build_manager_prompt(**kwargs)
-        action_response = self.action_llm(action_prompt)
+        action_response = self.action_llm(action_prompt, call_type="manager_action")
         return format_step(action_response)
 
     def forward(self, stage: str, *args, **kwargs) -> str:

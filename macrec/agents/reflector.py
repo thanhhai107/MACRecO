@@ -70,7 +70,7 @@ class Reflector(Agent):
 
     def _prompt_reflection(self, input: str, scratchpad: str) -> str:
         reflection_prompt = self._build_reflector_prompt(input, scratchpad)
-        reflection_response = self.llm(reflection_prompt)
+        reflection_response = self.llm(reflection_prompt, call_type="reflector")
         if self.keep_reflections:
             self.reflection_input = reflection_prompt
             self.reflection_output = reflection_response

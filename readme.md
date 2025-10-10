@@ -63,7 +63,7 @@ The video demo is available at [Video Demo](https://cloud.tsinghua.edu.cn/f/bb41
     ```shell
     pip install -r requirements.txt
     ```
-3. Run the following commands to download and preprocess the dataset (including `ml-100k` and `Amazon Beauty`):
+3. Run the following commands to download and preprocess the dataset (including `ml-100k`, `Amazon Beauty` and `Amazon Electronics`):
    ```shell
    bash ./scripts/preprocess.sh
    ```

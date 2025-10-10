@@ -59,7 +59,7 @@ class Searcher(ToolAgent):
 
     def _prompt_searcher(self, **kwargs) -> str:
         searcher_prompt = self._build_searcher_prompt(**kwargs)
-        command = self.searcher(searcher_prompt)
+        command = self.searcher(searcher_prompt, call_type="searcher")
         return command
 
     def command(self, command: str) -> None:

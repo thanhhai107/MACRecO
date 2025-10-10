@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 
 from macrec.tasks.evaluate import EvaluateTask
 from macrec.utils import init_all_seeds
+from macrec.utils.token_tracker import get_token_tracker
 
 class TestTask(EvaluateTask):
     @staticmethod
@@ -30,7 +31,15 @@ class TestTask(EvaluateTask):
             init_all_seeds(2024)
         self.samples = samples
         self.offset = offset
+        
+        # Reset token tracker before running
+        token_tracker = get_token_tracker()
+        token_tracker.reset()
+        
         super().run(*args, **kwargs)
+        
+        # Display token usage summary after completion
+        token_tracker.log_summary()
 
 if __name__ == '__main__':
     TestTask().launch()

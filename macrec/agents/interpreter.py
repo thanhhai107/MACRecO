@@ -50,7 +50,7 @@ class Interpreter(ToolAgent):
 
     def _prompt_interpreter(self, **kwargs) -> str:
         interpreter_prompt = self._build_interpreter_prompt(**kwargs)
-        command = self.interpreter(interpreter_prompt)
+        command = self.interpreter(interpreter_prompt, call_type="interpreter")
         return command
 
     def command(self, command: str, input: str) -> None:

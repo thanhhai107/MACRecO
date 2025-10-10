@@ -70,7 +70,7 @@ class Analyst(ToolAgent):
 
     def _prompt_analyst(self, **kwargs) -> str:
         analyst_prompt = self._build_analyst_prompt(**kwargs)
-        command = self.analyst(analyst_prompt)
+        command = self.analyst(analyst_prompt, call_type="analyst")
         return command
 
     def command(self, command: str) -> None:

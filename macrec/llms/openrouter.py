@@ -13,6 +13,7 @@ class OpenRouterLLM(BaseLLM):
             `json_mode` (`bool`, optional): Whether to use the JSON mode. Defaults to `False`.
             `api_key` (`str`, optional): The API key for OpenRouter. If not provided, will use environment variable OPENROUTER_API_KEY.
         """
+        super().__init__()
         self.model_name = model_name
         self.json_mode = json_mode
         self.max_tokens: int = kwargs.get('max_tokens', 256)
@@ -98,24 +99,55 @@ class OpenRouterLLM(BaseLLM):
             )
             self.model_type = 'chat'
 
-    def __call__(self, prompt: str, *args, **kwargs) -> str:
+    def __call__(self, prompt: str, call_type: str = "unknown", *args, **kwargs) -> str:
         """
         Args:
             `prompt` (`str`): The prompt to feed into the LLM.
+            `call_type` (`str`): Type of call for token tracking.
         Returns:
             `str`: The OpenRouter LLM output.
         """
         try:
             if self.model_type == 'completion':
-                return self.model.invoke(prompt).content.replace('\n', ' ').strip()
+                response = self.model.invoke(prompt)
+                output = response.content.replace('\n', ' ').strip()
+                
+                # Track tokens if available in response
+                if hasattr(response, 'usage_metadata'):
+                    usage_metadata = response.usage_metadata
+                    input_tokens = getattr(usage_metadata, 'input_tokens', 0)
+                    output_tokens = getattr(usage_metadata, 'output_tokens', 0)
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                elif hasattr(response, 'usage'):
+                    usage = response.usage
+                    input_tokens = getattr(usage, 'prompt_tokens', 0)
+                    output_tokens = getattr(usage, 'completion_tokens', 0)
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                
+                return output
             else:
-                return self.model.invoke(
+                response = self.model.invoke(
                     [
                         HumanMessage(
                             content=prompt,
                         )
                     ]
-                ).content.replace('\n', ' ').strip()
+                )
+                output = response.content.replace('\n', ' ').strip()
+                
+                # Track tokens if available in response
+                if hasattr(response, 'usage_metadata'):
+                    usage_metadata = response.usage_metadata
+                    input_tokens = getattr(usage_metadata, 'input_tokens', 0)
+                    output_tokens = getattr(usage_metadata, 'output_tokens', 0)
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                elif hasattr(response, 'usage'):
+                    usage = response.usage
+                    input_tokens = getattr(usage, 'prompt_tokens', 0)
+                    output_tokens = getattr(usage, 'completion_tokens', 0)
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                
+                return output
         except Exception as e:
             logger.error(f"Error calling OpenRouter model: {e}")
             raise e

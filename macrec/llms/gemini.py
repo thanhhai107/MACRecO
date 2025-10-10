@@ -14,6 +14,7 @@ class GeminiLLM(BaseLLM):
             `json_mode` (`bool`, optional): Whether to use structured output mode. Defaults to `False`.
             `api_key` (`str`, optional): The API key for Gemini. If not provided, will use environment variable GOOGLE_API_KEY.
         """
+        super().__init__()
         self.model_name = model_name
         self.json_mode = json_mode
         self.max_tokens: int = kwargs.get('max_tokens', 256)
@@ -84,10 +85,11 @@ class GeminiLLM(BaseLLM):
         if json_mode:
             logger.info("Using JSON mode for Gemini.")
 
-    def __call__(self, prompt: str, *args, **kwargs) -> str:
+    def __call__(self, prompt: str, call_type: str = "unknown", *args, **kwargs) -> str:
         """
         Args:
             `prompt` (`str`): The prompt to feed into the LLM.
+            `call_type` (`str`): Type of call for token tracking.
         Returns:
             `str`: The Gemini LLM output.
         """
@@ -97,6 +99,13 @@ class GeminiLLM(BaseLLM):
                 prompt = prompt + "\n\nPlease respond with valid JSON format only."
             
             response = self.model.generate_content(prompt)
+            
+            # Track tokens if available in response
+            if hasattr(response, 'usage_metadata'):
+                usage_metadata = response.usage_metadata
+                input_tokens = getattr(usage_metadata, 'prompt_token_count', 0)
+                output_tokens = getattr(usage_metadata, 'candidates_token_count', 0)
+                self.track_tokens(input_tokens, output_tokens, call_type)
             
             if response.candidates and response.candidates[0].content:
                 content = response.candidates[0].content.parts[0].text
