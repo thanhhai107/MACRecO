@@ -1,4 +1,4 @@
 {
-    "api_base": "https://XXX",
-    "api_key": "sk_XXXX"
+    "provider":"",
+    "api_key":""
 }

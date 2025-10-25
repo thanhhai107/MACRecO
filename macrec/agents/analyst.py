@@ -167,22 +167,11 @@ class Analyst(ToolAgent):
                 return observation
             else:
                 analyse_type, id = argument
-                if isinstance(id, str):
-                    # Handle user_ and item_ prefixes by stripping them
-                    if id.startswith('user_'):
-                        id = id[5:]  # Remove 'user_' prefix
-                    elif id.startswith('item_'):
-                        id = id[5:]  # Remove 'item_' prefix
-                    try:
-                        id = int(id)
-                    except ValueError:
-                        observation = f"Invalid id: {id}. The id should be an integer."
-                        return observation
-                elif analyse_type.lower() not in ['user', 'item']:
+                if analyse_type.lower() not in ['user', 'item']:
                     observation = f"Invalid analyse type: {analyse_type}. It should be either 'user' or 'item'."
                     return observation
                 elif not isinstance(id, int):
-                    observation = f"Invalid id: {id}. It should be an integer."
+                    observation = f"Invalid id: {id}. The id should be an integer."
                     return observation
         else:
             if len(argument.split(',')) != 2:
@@ -190,15 +179,13 @@ class Analyst(ToolAgent):
                 return observation
             else:
                 analyse_type, id = argument.split(',')
-                if analyse_type.lower() not in ['user', 'item']:
+                if 'user_' in id or 'item_' in id:
+                    observation = f"Invalid id: {id}. Don't use the prefix 'user_' or 'item_'. Just use the id number only, e.g., 1, 2, 3, ..."
+                    return observation
+                elif analyse_type.lower() not in ['user', 'item']:
                     observation = f"Invalid analyse type: {analyse_type}. It should be either 'user' or 'item'."
                     return observation
                 else:
-                    # Handle user_ and item_ prefixes by stripping them
-                    if id.startswith('user_'):
-                        id = id[5:]  # Remove 'user_' prefix
-                    elif id.startswith('item_'):
-                        id = id[5:]  # Remove 'item_' prefix
                     try:
                         id = int(id)
                     except ValueError or TypeError:
