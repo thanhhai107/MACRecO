@@ -102,9 +102,13 @@ class GeminiLLM(BaseLLM):
             
             # Check if response was truncated due to token limit
             if response.candidates and response.candidates[0].finish_reason:
-                finish_reason = str(response.candidates[0].finish_reason)
-                if finish_reason not in ['STOP', 'FinishReason.STOP']:
-                    logger.warning(f"Gemini response ended with finish_reason={finish_reason}. Response may be incomplete.")
+                finish_reason = response.candidates[0].finish_reason
+                finish_reason_str = str(finish_reason)
+                # Only warn if it's actually a truncation (MAX_TOKENS, etc), not just STOP or OTHER
+                # Gemini FinishReason enum values: STOP=1, MAX_TOKENS=2, SAFETY=3, RECITATION=4, OTHER=5
+                # After str(): 'FinishReason.STOP', 'FinishReason.MAX_TOKENS', etc.
+                if 'MAX_TOKENS' in finish_reason_str:
+                    logger.warning(f"Gemini response ended with finish_reason={finish_reason_str}. Response may be incomplete due to token limit.")
             
             # Track tokens if available in response
             if hasattr(response, 'usage_metadata'):
