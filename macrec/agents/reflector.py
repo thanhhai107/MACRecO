@@ -5,8 +5,47 @@ from transformers import AutoTokenizer
 from langchain.prompts import PromptTemplate
 
 from macrec.agents.base import Agent
-from macrec.llms import AnyOpenAILLM
+from macrec.llms import AnyOpenAILLM, GeminiLLM
 from macrec.utils import format_step, format_reflections, format_last_attempt, read_json, get_rm
+
+class GeminiTokenizerWrapper:
+    """
+    Wrapper class to provide a tokenizer-like interface for Gemini models.
+    Uses Gemini's native count_tokens API for accurate token counting.
+    """
+    def __init__(self, model):
+        """
+        Args:
+            model: The GenerativeModel instance from google.generativeai
+        """
+        self.model = model
+    
+    def encode(self, text: str) -> list:
+        """
+        Encode text and return a list representing tokens.
+        For compatibility, returns a list with length equal to token count.
+        
+        Args:
+            text: The text to tokenize
+            
+        Returns:
+            list: A list with length equal to the token count
+        """
+        try:
+            result = self.model.count_tokens(text)
+            # Return a list with length equal to token count for compatibility
+            return [0] * result.total_tokens
+        except Exception as e:
+            logger.warning(f"Error counting tokens with Gemini API: {e}. Falling back to approximation.")
+            # Fallback to rough estimation: ~4 chars per token
+            return [0] * (len(text) // 4)
+    
+    def decode(self, tokens: list) -> str:
+        """
+        Dummy decode method for compatibility.
+        Not actually used in the reflector.
+        """
+        return ""
 
 class ReflectionStrategy(Enum):
     """
@@ -34,6 +73,10 @@ class Reflector(Agent):
         self.llm = self.get_LLM(config=config)
         if isinstance(self.llm, AnyOpenAILLM):
             self.enc = tiktoken.encoding_for_model(self.llm.model_name)
+        elif isinstance(self.llm, GeminiLLM):
+            # Use Gemini's native count_tokens API for accurate token counting
+            self.enc = GeminiTokenizerWrapper(self.llm.model)
+            logger.info(f"Using Gemini native tokenizer for model: {self.llm.model_name}")
         else:
             self.enc = AutoTokenizer.from_pretrained(self.llm.model_name)
         self.json_mode = self.llm.json_mode

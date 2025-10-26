@@ -7,6 +7,45 @@ from macrec.agents.base import Agent
 from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM
 from macrec.utils import format_step, run_once
 
+class GeminiTokenizerWrapper:
+    """
+    Wrapper class to provide a tokenizer-like interface for Gemini models.
+    Uses Gemini's native count_tokens API for accurate token counting.
+    """
+    def __init__(self, model):
+        """
+        Args:
+            model: The GenerativeModel instance from google.generativeai
+        """
+        self.model = model
+    
+    def encode(self, text: str) -> list:
+        """
+        Encode text and return a list representing tokens.
+        For compatibility, returns a list with length equal to token count.
+        
+        Args:
+            text: The text to tokenize
+            
+        Returns:
+            list: A list with length equal to the token count
+        """
+        try:
+            result = self.model.count_tokens(text)
+            # Return a list with length equal to token count for compatibility
+            return [0] * result.total_tokens
+        except Exception as e:
+            logger.warning(f"Error counting tokens with Gemini API: {e}. Falling back to approximation.")
+            # Fallback to rough estimation: ~4 chars per token
+            return [0] * (len(text) // 4)
+    
+    def decode(self, tokens: list) -> str:
+        """
+        Dummy decode method for compatibility.
+        Not actually used in the manager.
+        """
+        return ""
+
 class Manager(Agent):
     """
     The manager agent. The manager agent is a two-stage agent, which first prompts the thought LLM and then prompts the action LLM.
@@ -24,8 +63,12 @@ class Manager(Agent):
         self.json_mode = self.action_llm.json_mode
         if isinstance(self.thought_llm, AnyOpenAILLM):
             self.thought_enc = tiktoken.encoding_for_model(self.thought_llm.model_name)
-        elif isinstance(self.thought_llm, (GeminiLLM, OpenRouterLLM)):
-            # For Gemini and OpenRouter, use tiktoken with a default model for tokenization
+        elif isinstance(self.thought_llm, GeminiLLM):
+            # Use Gemini's native count_tokens API for accurate token counting
+            self.thought_enc = GeminiTokenizerWrapper(self.thought_llm.model)
+            logger.info(f"Using Gemini native tokenizer for thought LLM: {self.thought_llm.model_name}")
+        elif isinstance(self.thought_llm, OpenRouterLLM):
+            # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
             self.thought_enc = tiktoken.get_encoding("cl100k_base")
         else:
@@ -33,8 +76,12 @@ class Manager(Agent):
             
         if isinstance(self.action_llm, AnyOpenAILLM):
             self.action_enc = tiktoken.encoding_for_model(self.action_llm.model_name)
-        elif isinstance(self.action_llm, (GeminiLLM, OpenRouterLLM)):
-            # For Gemini and OpenRouter, use tiktoken with a default model for tokenization
+        elif isinstance(self.action_llm, GeminiLLM):
+            # Use Gemini's native count_tokens API for accurate token counting
+            self.action_enc = GeminiTokenizerWrapper(self.action_llm.model)
+            logger.info(f"Using Gemini native tokenizer for action LLM: {self.action_llm.model_name}")
+        elif isinstance(self.action_llm, OpenRouterLLM):
+            # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
             self.action_enc = tiktoken.get_encoding("cl100k_base")
         else:
