@@ -9,6 +9,7 @@ from macrec.tasks.generation import GenerationTask
 from macrec.utils import str2list, NumpyEncoder
 from macrec.systems import CollaborationSystem
 from macrec.evaluation import MetricDict, HitRatioAt, NDCGAt, RMSE, Accuracy, MAE
+from macrec.utils.token_tracker import get_token_tracker
 
 class EvaluateTask(GenerationTask):
     @staticmethod
@@ -82,12 +83,23 @@ class EvaluateTask(GenerationTask):
     def after_iteration(self, answer: Any, gt_answer: int | float | str, record: dict, pbar: tqdm) -> None:
         record['Answer_GT'] = gt_answer
         self.output_file.write(record)
-        pbar.set_description(self.update_evaluation(answer, gt_answer))
+        metric_str = self.update_evaluation(answer, gt_answer)
+        
+        # Log cumulative token usage alongside the metric
+        token_tracker = get_token_tracker()
+        summary = token_tracker.get_summary()
+        logger.debug(f"Cumulative Tokens - Input: {summary['total_input_tokens']:,} Output: {summary['total_output_tokens']:,} Total: {summary['total_tokens']:,}")
+        
+        pbar.set_description(metric_str)
 
     def after_generate(self) -> None:
         self.output_file.close()
         logger.success("===================================Evaluation Report===================================")
         self.metrics.report()
+        
+        # Display token usage summary after completion
+        token_tracker = get_token_tracker()
+        token_tracker.log_summary()
 
     def run(self, steps: int, topks: list[int], *args, **kwargs):
         assert kwargs['task'] == 'rp' or kwargs['task'] == 'sr', "Only support ranking and rating tasks."
