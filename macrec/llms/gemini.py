@@ -118,7 +118,12 @@ class GeminiLLM(BaseLLM):
                 self.track_tokens(input_tokens, output_tokens, call_type)
             
             if response.candidates and response.candidates[0].content:
-                content = response.candidates[0].content.parts[0].text
+                parts = response.candidates[0].content.parts
+                if not parts:
+                    logger.warning("No content parts in Gemini response")
+                    return ""
+                
+                content = parts[0].text
                 
                 # For JSON mode, clean up markdown code blocks before processing
                 if self.json_mode:
