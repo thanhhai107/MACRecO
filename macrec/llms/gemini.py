@@ -108,7 +108,7 @@ class GeminiLLM(BaseLLM):
                 # Gemini FinishReason enum values: STOP=1, MAX_TOKENS=2, SAFETY=3, RECITATION=4, OTHER=5
                 # After str(): 'FinishReason.STOP', 'FinishReason.MAX_TOKENS', etc.
                 if 'MAX_TOKENS' in finish_reason_str:
-                    logger.info(f"Gemini response ended with finish_reason={finish_reason_str}. Response may be incomplete due to token limit.")
+                    logger.debug(f"Gemini response ended with finish_reason={finish_reason_str}. Response may be incomplete due to token limit.")
             
             # Track tokens if available in response
             if hasattr(response, 'usage_metadata'):
