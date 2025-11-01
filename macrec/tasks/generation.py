@@ -132,12 +132,17 @@ class GenerationTask(Task):
         with tqdm(total=len(data)) as pbar:
             for test_data, gt_answer, data_sample in data:
                 record = dict()
-                self.system.set_data(input=test_data, context="", gt_answer=gt_answer, data_sample=data_sample)
-                self.system.reset(clear=True)
-                for i in range(steps):
-                    logger.debug(f'===================================Running step {i}...===================================')
-                    self.after_step(answer=self.system(), gt_answer=gt_answer, step=i, record=record)
-                self.after_iteration(answer=self.system.answer, gt_answer=gt_answer, record=record, pbar=pbar)
+                try:
+                    self.system.set_data(input=test_data, context="", gt_answer=gt_answer, data_sample=data_sample)
+                    self.system.reset(clear=True)
+                    for i in range(steps):
+                        logger.debug(f'===================================Running step {i}...===================================')
+                        self.after_step(answer=self.system(), gt_answer=gt_answer, step=i, record=record)
+                    self.after_iteration(answer=self.system.answer, gt_answer=gt_answer, record=record, pbar=pbar)
+                except Exception as e:
+                    logger.error(f"Error processing sample: {e}. Skipping this sample.")
+                    pbar.update(1)
+                    continue
                 pbar.update(1)
         self.after_generate()
 

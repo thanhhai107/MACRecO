@@ -166,16 +166,28 @@ class CollaborationSystem(System):
             if self.reflector is not None:
                 self.manager_kwargs['reflections'] = ''
             return False
-        self.reflector(self.input, self.scratchpad)
-        self.reflected = True
-        self.manager_kwargs['reflections'] = self.reflector.reflections_str
-        if self.reflector.json_mode:
-            reflection_json = json.loads(self.reflector.reflections[-1])
-            if 'correctness' in reflection_json and reflection_json['correctness']:
-                # don't forward if the last reflection is correct
-                logger.debug('Last reflection is correct, don\'t forward.')
-                self.log(":red[**Last reflection is correct, don't forward**]", agent=self.reflector, logging=False)
-                return True
+        try:
+            self.reflector(self.input, self.scratchpad)
+            self.reflected = True
+            self.manager_kwargs['reflections'] = self.reflector.reflections_str
+            if self.reflector.json_mode:
+                if not self.reflector.reflections or not self.reflector.reflections[-1]:
+                    logger.warning('Reflector returned empty reflection. Keeping manager answer.')
+                    return False
+                try:
+                    reflection_json = json.loads(self.reflector.reflections[-1])
+                    if 'correctness' in reflection_json and reflection_json['correctness']:
+                        # don't forward if the last reflection is correct
+                        logger.debug('Last reflection is correct, don\'t forward.')
+                        self.log(":red[**Last reflection is correct, don't forward**]", agent=self.reflector, logging=False)
+                        return True
+                except json.JSONDecodeError as e:
+                    logger.warning(f'Failed to parse reflection JSON: {e}. Keeping manager answer.')
+                    return False
+        except Exception as e:
+            logger.error(f'Reflector failed with error: {e}. Keeping manager answer.')
+            self.reflected = False
+            return False
         return False
 
     def interprete(self) -> None:
