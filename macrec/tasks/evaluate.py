@@ -57,7 +57,15 @@ class EvaluateTask(GenerationTask):
         return self.steps
 
     def before_generate(self) -> None:
-        self.get_metrics(self.topks)
+        # Dynamically adjust topks based on number of candidates
+        adjusted_topks = self.topks.copy() if isinstance(self.topks, list) else [self.topks]
+        if hasattr(self, 'n_candidate') and self.n_candidate >= 20:
+            if 10 not in adjusted_topks:
+                adjusted_topks.append(10)
+                adjusted_topks.sort()
+                logger.info(f"Adjusted topks to {adjusted_topks} (n_candidate={self.n_candidate} >= 20)")
+        
+        self.get_metrics(adjusted_topks)
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         dataset = os.path.basename(os.path.dirname(self.args.data_file))
         data_file = os.path.basename(self.args.data_file)
@@ -68,7 +76,7 @@ class EvaluateTask(GenerationTask):
             'sampled': self.sampled if hasattr(self, 'sampled') else False,
             'config': self.args.system_config.replace('/', '-'),
             'max_his': self.args.max_his,
-            'topk': self.topks,
+            'topk': adjusted_topks,
         }
         output_file_name = '_'.join([f'{k}={v}' for k, v in output_args.items()]) + '.jsonl'
         self.output_file = jsonlines.open(os.path.join(run_dir, output_file_name), mode="w", dumps=NumpyEncoder(ensure_ascii=False).encode, flush=True)
