@@ -4,7 +4,7 @@ from transformers import AutoTokenizer
 from langchain.prompts import PromptTemplate
 
 from macrec.agents.base import Agent
-from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM
+from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM, OllamaLLM
 from macrec.utils import format_step, run_once
 
 class GeminiTokenizerWrapper:
@@ -71,6 +71,10 @@ class Manager(Agent):
             # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
             self.thought_enc = tiktoken.get_encoding("cl100k_base")
+        elif isinstance(self.thought_llm, OllamaLLM):
+            # For Ollama, use tiktoken with a default model for tokenization
+            # This is an approximation since Ollama models may use different tokenizers
+            self.thought_enc = tiktoken.get_encoding("cl100k_base")
         else:
             self.thought_enc = AutoTokenizer.from_pretrained(self.thought_llm.model_name)
             
@@ -83,6 +87,10 @@ class Manager(Agent):
         elif isinstance(self.action_llm, OpenRouterLLM):
             # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
+            self.action_enc = tiktoken.get_encoding("cl100k_base")
+        elif isinstance(self.action_llm, OllamaLLM):
+            # For Ollama, use tiktoken with a default model for tokenization
+            # This is an approximation since Ollama models may use different tokenizers
             self.action_enc = tiktoken.get_encoding("cl100k_base")
         else:
             self.action_enc = AutoTokenizer.from_pretrained(self.action_llm.model_name)
