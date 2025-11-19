@@ -1,5 +1,6 @@
 from typing import Any
 from loguru import logger
+import time
 
 from macrec.agents.base import ToolAgent
 from macrec.tools import InfoDatabase, InteractionRetriever
@@ -70,24 +71,35 @@ class Analyst(ToolAgent):
 
     def _prompt_analyst(self, **kwargs) -> str:
         analyst_prompt = self._build_analyst_prompt(**kwargs)
+        logger.debug(f"[ANALYST] Starting LLM call, prompt_len={len(analyst_prompt)}")
+        llm_start = time.time()
         command = self.analyst(analyst_prompt, call_type="analyst")
+        llm_time = time.time() - llm_start
+        logger.debug(f"[ANALYST] LLM call completed in {llm_time:.3f}s")
         return command
 
     def command(self, command: str) -> None:
         logger.debug(f'Command: {command}')
+        command_start = time.time()
         log_head = ''
         action_type, argument = parse_action(command, json_mode=self.json_mode)
         if action_type.lower() == 'userinfo':
             try:
                 query_user_id = int(argument)
+                info_start = time.time()
                 observation = self.info_retriever.user_info(user_id=query_user_id)
+                info_time = time.time() - info_start
+                logger.debug(f"[ANALYST] UserInfo retrieval completed in {info_time:.3f}s")
                 log_head = f':violet[Look up UserInfo of user] :red[{query_user_id}]:violet[...]\n- '
             except ValueError or TypeError:
                 observation = f"Invalid user id: {argument}"
         elif action_type.lower() == 'iteminfo':
             try:
                 query_item_id = int(argument)
+                info_start = time.time()
                 observation = self.info_retriever.item_info(item_id=query_item_id)
+                info_time = time.time() - info_start
+                logger.debug(f"[ANALYST] ItemInfo retrieval completed in {info_time:.3f}s")
                 log_head = f':violet[Look up ItemInfo of item] :red[{query_item_id}]:violet[...]\n- '
             except ValueError or TypeError:
                 observation = f"Invalid item id: {argument}"
@@ -111,7 +123,10 @@ class Analyst(ToolAgent):
                     observation = f"Invalid user id and retrieval number: {argument}"
                     valid = False
             if valid:
+                hist_start = time.time()
                 observation = self.interaction_retriever.user_retrieve(user_id=query_user_id, k=k)
+                hist_time = time.time() - hist_start
+                logger.debug(f"[ANALYST] UserHistory retrieval completed in {hist_time:.3f}s")
                 log_head = f':violet[Look up UserHistory of user] :red[{query_user_id}] :violet[with at most] :red[{k}] :violet[items...]\n- '
         elif action_type.lower() == 'itemhistory':
             valid = True

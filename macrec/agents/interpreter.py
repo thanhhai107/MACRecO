@@ -1,3 +1,4 @@
+import time
 from typing import Any
 from loguru import logger
 from langchain.prompts import PromptTemplate
@@ -49,16 +50,27 @@ class Interpreter(ToolAgent):
         )
 
     def _prompt_interpreter(self, **kwargs) -> str:
+        llm_start = time.time()
+        logger.debug(f"[INTERPRETER] Starting LLM call")
+        
         interpreter_prompt = self._build_interpreter_prompt(**kwargs)
         command = self.interpreter(interpreter_prompt, call_type="interpreter")
+        llm_time = time.time() - llm_start
+        logger.info(f"[INTERPRETER] LLM call completed in {llm_time:.3f}s")
+        
         return command
 
     def command(self, command: str, input: str) -> None:
         logger.debug(f'Command: {command}')
         log_head = ''
+        action_start = time.time()
+        
         action_type, argument = parse_action(command, json_mode=self.json_mode)
         if action_type.lower() == 'summarize':
+            tool_start = time.time()
             observation = self.summarizer.summarize(text=input)
+            tool_time = time.time() - tool_start
+            logger.debug(f"[INTERPRETER] Summarization completed in {tool_time:.3f}s")
             log_head = ':violet[Summarize input...]\n- '
         elif action_type.lower() == 'finish':
             observation = self.finish(results=argument)
@@ -67,6 +79,9 @@ class Interpreter(ToolAgent):
             observation = f'Unknown command type: {action_type}.'
         logger.debug(f'Observation: {observation}')
         self.observation(observation, log_head)
+        action_time = time.time() - action_start
+        logger.info(f"[INTERPRETER] Action completed in {action_time:.3f}s")
+        
         turn = {
             'command': command,
             'observation': observation,

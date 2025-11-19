@@ -1,3 +1,4 @@
+import time
 import tiktoken
 from enum import Enum
 from loguru import logger
@@ -112,8 +113,14 @@ class Reflector(Agent):
         )
 
     def _prompt_reflection(self, input: str, scratchpad: str) -> str:
+        llm_start = time.time()
+        logger.debug(f"[REFLECTOR] Starting reflection LLM call, input_len={len(input)}")
+        
         reflection_prompt = self._build_reflector_prompt(input, scratchpad)
         reflection_response = self.llm(reflection_prompt, call_type="reflector")
+        llm_time = time.time() - llm_start
+        logger.info(f"[REFLECTOR] LLM call completed in {llm_time:.3f}s")
+        
         if self.keep_reflections:
             self.reflection_input = reflection_prompt
             self.reflection_output = reflection_response

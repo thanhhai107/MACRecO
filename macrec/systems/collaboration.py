@@ -1,6 +1,7 @@
 import json
 from typing import Any, Optional
 from loguru import logger
+import time
 
 from macrec.systems.base import System
 from macrec.agents import Agent, Manager, Analyst, Interpreter, Reflector, Searcher
@@ -96,19 +97,29 @@ class CollaborationSystem(System):
 
     def think(self):
         # Think
+        step_start = time.time()
+        logger.debug(f'[SYSTEM] Step {self.step_n}: Starting THINK phase')
         logger.debug(f'Step {self.step_n}:')
         self.scratchpad += f'\nThought {self.step_n}:'
+        thought_start = time.time()
         thought = self.manager(scratchpad=self.scratchpad, stage='thought', **self.manager_kwargs)
+        thought_time = time.time() - thought_start
+        logger.debug(f'[SYSTEM] Step {self.step_n}: THINK phase completed in {thought_time:.3f}s')
         self.scratchpad += ' ' + thought
         self.log(f'**Thought {self.step_n}**: {thought}', agent=self.manager)
 
     def act(self) -> tuple[str, Any]:
         # Act
+        logger.debug(f'[SYSTEM] Step {self.step_n}: Starting ACT phase')
+        act_start = time.time()
         if self.max_step == self.step_n:
             self.scratchpad += f'\nHint: {self.manager.hint}'
         self.scratchpad += f'\nValid action example: {self.manager.valid_action_example}:'
         self.scratchpad += f'\nAction {self.step_n}:'
+        action_start = time.time()
         action = self.manager(scratchpad=self.scratchpad, stage='action', **self.manager_kwargs)
+        action_time = time.time() - action_start
+        logger.debug(f'[SYSTEM] Step {self.step_n}: ACT phase completed in {action_time:.3f}s')
         self.scratchpad += ' ' + action
         action_type, argument = parse_action(action, json_mode=self.manager.json_mode)
         logger.debug(f'Action {self.step_n}: {action}')
@@ -116,35 +127,50 @@ class CollaborationSystem(System):
 
     def execute(self, action_type: str, argument: Any):
         # Execute
+        execute_start = time.time()
+        logger.debug(f'[SYSTEM] Step {self.step_n}: Starting EXECUTE phase for action_type={action_type}')
         log_head = ''
         if action_type.lower() == 'finish':
             parse_result = self._parse_answer(argument)
             if parse_result['valid']:
                 observation = self.finish(parse_result['answer'])
                 log_head = ':violet[Finish with answer]:\n- '
+                execute_time = time.time() - execute_start
+                logger.debug(f'[SYSTEM] Step {self.step_n}: FINISH action completed in {execute_time:.3f}s')
             else:
                 assert "message" in parse_result, "Invalid parse result."
                 observation = f'{parse_result["message"]} Valid Action examples are {self.manager.valid_action_example}.'
+                execute_time = time.time() - execute_start
+                logger.debug(f'[SYSTEM] Step {self.step_n}: FINISH action validation failed in {execute_time:.3f}s')
         elif action_type.lower() == 'analyse':
             if self.analyst is None:
                 observation = 'Analyst is not configured. Cannot execute the action "Analyse".'
             else:
                 self.log(f':violet[Calling] :red[Analyst] :violet[with] :blue[{argument}]:violet[...]', agent=self.manager, logging=False)
+                analyst_start = time.time()
                 observation = self.analyst.invoke(argument=argument, json_mode=self.manager.json_mode)
+                analyst_time = time.time() - analyst_start
+                logger.debug(f'[SYSTEM] Step {self.step_n}: ANALYSE action completed in {analyst_time:.3f}s')
                 log_head = f':violet[Response from] :red[Analyst] :violet[with] :blue[{argument}]:violet[:]\n- '
         elif action_type.lower() == 'search':
             if self.searcher is None:
                 observation = 'Searcher is not configured. Cannot execute the action "Search".'
             else:
                 self.log(f':violet[Calling] :red[Searcher] :violet[with] :blue[{argument}]:violet[...]', agent=self.manager, logging=False)
+                searcher_start = time.time()
                 observation = self.searcher.invoke(argument=argument, json_mode=self.manager.json_mode)
+                searcher_time = time.time() - searcher_start
+                logger.debug(f'[SYSTEM] Step {self.step_n}: SEARCH action completed in {searcher_time:.3f}s')
                 log_head = f':violet[Response from] :red[Searcher] :violet[with] :blue[{argument}]:violet[:]\n- '
         elif action_type.lower() == 'interpret':
             if self.interpreter is None:
                 observation = 'Interpreter is not configured. Cannot execute the action "Interpret".'
             else:
                 self.log(f':violet[Calling] :red[Interpreter] :violet[with] :blue[{argument}]:violet[...]', agent=self.manager, logging=False)
+                interpreter_start = time.time()
                 observation = self.interpreter.invoke(argument=argument, json_mode=self.manager.json_mode)
+                interpreter_time = time.time() - interpreter_start
+                logger.debug(f'[SYSTEM] Step {self.step_n}: INTERPRET action completed in {interpreter_time:.3f}s')
                 log_head = f':violet[Response from] :red[Interpreter] :violet[with] :blue[{argument}]:violet[:]\n- '
         else:
             observation = f'Invalid Action type or format. Valid Action examples are {self.manager.valid_action_example}.'

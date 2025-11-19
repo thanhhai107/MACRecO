@@ -1,3 +1,4 @@
+import time
 from typing import Any
 from loguru import logger
 from langchain.prompts import PromptTemplate
@@ -58,28 +59,45 @@ class Searcher(ToolAgent):
         )
 
     def _prompt_searcher(self, **kwargs) -> str:
+        llm_start = time.time()
+        logger.debug(f"[SEARCHER] Starting LLM call")
+        
         searcher_prompt = self._build_searcher_prompt(**kwargs)
         command = self.searcher(searcher_prompt, call_type="searcher")
+        llm_time = time.time() - llm_start
+        logger.info(f"[SEARCHER] LLM call completed in {llm_time:.3f}s")
+        
         return command
 
     def command(self, command: str) -> None:
         logger.debug(f'Command: {command}')
         log_head = ''
+        action_start = time.time()
+        
         action_type, argument = parse_action(command, json_mode=self.json_mode)
         if action_type.lower() == 'search':
+            tool_start = time.time()
             observation = self.retriever.search(query=argument)
+            tool_time = time.time() - tool_start
+            logger.debug(f"[SEARCHER] Search retrieval completed in {tool_time:.3f}s")
             log_head = f':violet[Search for] :red[{argument}]:violet[...]\n- '
         elif action_type.lower() == 'lookup':
             if self.json_mode:
                 title, term = argument
+                tool_start = time.time()
                 observation = self.retriever.lookup(title=title, term=term)
+                tool_time = time.time() - tool_start
+                logger.debug(f"[SEARCHER] Lookup retrieval completed in {tool_time:.3f}s")
                 log_head = f':violet[Lookup for] :red[{term}] :violet[in document] :red[{title}]:violet[...]\n- '
             else:
                 try:
                     title, term = argument.split(',')
                     title = title.strip()
                     term = term.strip()
+                    tool_start = time.time()
                     observation = self.retriever.lookup(title=title, term=term)
+                    tool_time = time.time() - tool_start
+                    logger.debug(f"[SEARCHER] Lookup retrieval completed in {tool_time:.3f}s")
                     log_head = f':violet[Lookup for] :red[{term}] :violet[in document] :red[{title}]:violet[...]\n- '
                 except Exception:
                     observation = f'Invalid argument format: {argument}. Must be in the format "title, term".'
@@ -90,6 +108,9 @@ class Searcher(ToolAgent):
             observation = f'Unknown command type: {action_type}.'
         logger.debug(f'Observation: {observation}')
         self.observation(observation, log_head)
+        action_time = time.time() - action_start
+        logger.info(f"[SEARCHER] Action completed in {action_time:.3f}s")
+        
         turn = {
             'command': command,
             'observation': observation,
