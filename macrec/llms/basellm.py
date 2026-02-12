@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from macrec.utils.token_tracker import get_token_tracker
+from macrec.utils.token_tracker import token_tracker
 
 class BaseLLM(ABC):
     def __init__(self) -> None:
@@ -9,7 +9,7 @@ class BaseLLM(ABC):
         self.max_tokens: int
         self.max_context_length: int
         self.json_mode: bool
-        self.token_tracker = get_token_tracker()
+        self.token_tracker = token_tracker
 
     @property
     def tokens_limit(self) -> int:

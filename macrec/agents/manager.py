@@ -1,12 +1,13 @@
 import tiktoken
 from loguru import logger
 from transformers import AutoTokenizer
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 import time
 
 from macrec.agents.base import Agent
 from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM, OllamaLLM
 from macrec.utils import format_step, run_once
+from macrec.utils.token_tracker import token_tracker
 
 class GeminiTokenizerWrapper:
     """
@@ -145,7 +146,8 @@ class Manager(Agent):
         thought_start = time.time()
         thought_response = self.thought_llm(thought_prompt, call_type="manager_thought")
         thought_time = time.time() - thought_start
-        logger.info(f"[MANAGER] THOUGHT stage completed in {thought_time:.3f}s")
+        logger.debug(f"[MANAGER] THOUGHT stage completed in {thought_time:.3f}s")
+        token_tracker.track_agent_duration("manager_thought", thought_time)
         return format_step(thought_response)
 
     def _prompt_action(self, **kwargs) -> str:
@@ -154,7 +156,8 @@ class Manager(Agent):
         action_start = time.time()
         action_response = self.action_llm(action_prompt, call_type="manager_action")
         action_time = time.time() - action_start
-        logger.info(f"[MANAGER] ACTION stage completed in {action_time:.3f}s")
+        logger.debug(f"[MANAGER] ACTION stage completed in {action_time:.3f}s")
+        token_tracker.track_agent_duration("manager_action", action_time)
         return format_step(action_response)
 
     def forward(self, stage: str, *args, **kwargs) -> str:

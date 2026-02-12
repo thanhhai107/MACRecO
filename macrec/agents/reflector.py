@@ -3,11 +3,12 @@ import tiktoken
 from enum import Enum
 from loguru import logger
 from transformers import AutoTokenizer
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from macrec.agents.base import Agent
 from macrec.llms import AnyOpenAILLM, GeminiLLM
 from macrec.utils import format_step, format_reflections, format_last_attempt, read_json, get_rm
+from macrec.utils.token_tracker import token_tracker
 
 class GeminiTokenizerWrapper:
     """
@@ -119,7 +120,8 @@ class Reflector(Agent):
         reflection_prompt = self._build_reflector_prompt(input, scratchpad)
         reflection_response = self.llm(reflection_prompt, call_type="reflector")
         llm_time = time.time() - llm_start
-        logger.info(f"[REFLECTOR] LLM call completed in {llm_time:.3f}s")
+        logger.debug(f"[REFLECTOR] LLM call completed in {llm_time:.3f}s")
+        token_tracker.track_agent_duration("reflector", llm_time)
         
         if self.keep_reflections:
             self.reflection_input = reflection_prompt

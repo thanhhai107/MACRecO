@@ -1,6 +1,7 @@
 from loguru import logger
 from langchain_openai import ChatOpenAI, OpenAI
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
+import time
 
 from macrec.llms.basellm import BaseLLM
 
@@ -107,47 +108,71 @@ class OpenRouterLLM(BaseLLM):
         Returns:
             `str`: The OpenRouter LLM output.
         """
-        try:
-            if self.model_type == 'completion':
-                response = self.model.invoke(prompt)
-                output = response.content.replace('\n', ' ').strip()
+        max_retries = 10
+        retry_count = 0
+        
+        while retry_count <= max_retries:
+            try:
+                if self.model_type == 'completion':
+                    response = self.model.invoke(prompt)
+                    output = response.content.replace('\n', ' ').strip()
+                    
+                    # Track tokens if available in response
+                    if hasattr(response, 'usage_metadata'):
+                        usage_metadata = response.usage_metadata
+                        input_tokens = getattr(usage_metadata, 'input_tokens', 0)
+                        output_tokens = getattr(usage_metadata, 'output_tokens', 0)
+                        self.track_tokens(input_tokens, output_tokens, call_type)
+                    elif hasattr(response, 'usage'):
+                        usage = response.usage
+                        input_tokens = getattr(usage, 'prompt_tokens', 0)
+                        output_tokens = getattr(usage, 'completion_tokens', 0)
+                        self.track_tokens(input_tokens, output_tokens, call_type)
+                    
+                    return output
+                else:
+                    response = self.model.invoke(
+                        [
+                            HumanMessage(
+                                content=prompt,
+                            )
+                        ]
+                    )
+                    output = response.content.replace('\n', ' ').strip()
+                    
+                    # Track tokens if available in response
+                    if hasattr(response, 'usage_metadata'):
+                        usage_metadata = response.usage_metadata
+                        input_tokens = getattr(usage_metadata, 'input_tokens', 0)
+                        output_tokens = getattr(usage_metadata, 'output_tokens', 0)
+                        self.track_tokens(input_tokens, output_tokens, call_type)
+                    elif hasattr(response, 'usage'):
+                        usage = response.usage
+                        input_tokens = getattr(usage, 'prompt_tokens', 0)
+                        output_tokens = getattr(usage, 'completion_tokens', 0)
+                        self.track_tokens(input_tokens, output_tokens, call_type)
+                    
+                    return output
+                    
+            except Exception as e:
+                error_str = str(e) if e else ""
+                # Check if it's a rate limit error (429) or server error (503)
+                error_str_lower = error_str.lower() if isinstance(error_str, str) else ""
+                is_retryable = '429' in error_str or '503' in error_str or 'rate limit' in error_str_lower or 'too many requests' in error_str_lower
                 
-                # Track tokens if available in response
-                if hasattr(response, 'usage_metadata'):
-                    usage_metadata = response.usage_metadata
-                    input_tokens = getattr(usage_metadata, 'input_tokens', 0)
-                    output_tokens = getattr(usage_metadata, 'output_tokens', 0)
-                    self.track_tokens(input_tokens, output_tokens, call_type)
-                elif hasattr(response, 'usage'):
-                    usage = response.usage
-                    input_tokens = getattr(usage, 'prompt_tokens', 0)
-                    output_tokens = getattr(usage, 'completion_tokens', 0)
-                    self.track_tokens(input_tokens, output_tokens, call_type)
-                
-                return output
-            else:
-                response = self.model.invoke(
-                    [
-                        HumanMessage(
-                            content=prompt,
-                        )
-                    ]
-                )
-                output = response.content.replace('\n', ' ').strip()
-                
-                # Track tokens if available in response
-                if hasattr(response, 'usage_metadata'):
-                    usage_metadata = response.usage_metadata
-                    input_tokens = getattr(usage_metadata, 'input_tokens', 0)
-                    output_tokens = getattr(usage_metadata, 'output_tokens', 0)
-                    self.track_tokens(input_tokens, output_tokens, call_type)
-                elif hasattr(response, 'usage'):
-                    usage = response.usage
-                    input_tokens = getattr(usage, 'prompt_tokens', 0)
-                    output_tokens = getattr(usage, 'completion_tokens', 0)
-                    self.track_tokens(input_tokens, output_tokens, call_type)
-                
-                return output
-        except Exception as e:
-            logger.error(f"Error calling OpenRouter model: {e}")
-            raise e
+                if is_retryable and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = 1  # 1 second between retries
+                    logger.warning(f"Rate limit error calling OpenRouter model (attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time} second...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    if retry_count >= max_retries:
+                        logger.error(f"Error calling OpenRouter model after {max_retries} retries: {e}. Giving up on this call.")
+                    else:
+                        logger.error(f"Non-retryable error calling OpenRouter model: {e}")
+                    raise e
+        
+        # This should not be reached, but just in case
+        logger.error("Unexpected exit from retry loop")
+        return ""

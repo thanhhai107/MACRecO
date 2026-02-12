@@ -5,7 +5,7 @@ import time
 
 from macrec.systems.base import System
 from macrec.agents import Agent, Manager, Analyst, Interpreter, Reflector, Searcher
-from macrec.utils import parse_answer, parse_action, format_chat_history
+from macrec.utils import parse_answer, parse_action, format_chat_history, get_token_tracker
 
 class CollaborationSystem(System):
     @staticmethod
@@ -104,6 +104,7 @@ class CollaborationSystem(System):
         thought_start = time.time()
         thought = self.manager(scratchpad=self.scratchpad, stage='thought', **self.manager_kwargs)
         thought_time = time.time() - thought_start
+        get_token_tracker().track_agent_duration('manager_thought_invocation', thought_time)
         logger.debug(f'[SYSTEM] Step {self.step_n}: THINK phase completed in {thought_time:.3f}s')
         self.scratchpad += ' ' + thought
         self.log(f'**Thought {self.step_n}**: {thought}', agent=self.manager)
@@ -119,6 +120,7 @@ class CollaborationSystem(System):
         action_start = time.time()
         action = self.manager(scratchpad=self.scratchpad, stage='action', **self.manager_kwargs)
         action_time = time.time() - action_start
+        get_token_tracker().track_agent_duration('manager_action_invocation', action_time)
         logger.debug(f'[SYSTEM] Step {self.step_n}: ACT phase completed in {action_time:.3f}s')
         self.scratchpad += ' ' + action
         action_type, argument = parse_action(action, json_mode=self.manager.json_mode)
@@ -150,6 +152,7 @@ class CollaborationSystem(System):
                 analyst_start = time.time()
                 observation = self.analyst.invoke(argument=argument, json_mode=self.manager.json_mode)
                 analyst_time = time.time() - analyst_start
+                get_token_tracker().track_agent_duration('analyst_invocation', analyst_time)
                 logger.debug(f'[SYSTEM] Step {self.step_n}: ANALYSE action completed in {analyst_time:.3f}s')
                 log_head = f':violet[Response from] :red[Analyst] :violet[with] :blue[{argument}]:violet[:]\n- '
         elif action_type.lower() == 'search':
@@ -160,6 +163,7 @@ class CollaborationSystem(System):
                 searcher_start = time.time()
                 observation = self.searcher.invoke(argument=argument, json_mode=self.manager.json_mode)
                 searcher_time = time.time() - searcher_start
+                get_token_tracker().track_agent_duration('searcher_invocation', searcher_time)
                 logger.debug(f'[SYSTEM] Step {self.step_n}: SEARCH action completed in {searcher_time:.3f}s')
                 log_head = f':violet[Response from] :red[Searcher] :violet[with] :blue[{argument}]:violet[:]\n- '
         elif action_type.lower() == 'interpret':
@@ -170,6 +174,7 @@ class CollaborationSystem(System):
                 interpreter_start = time.time()
                 observation = self.interpreter.invoke(argument=argument, json_mode=self.manager.json_mode)
                 interpreter_time = time.time() - interpreter_start
+                get_token_tracker().track_agent_duration('interpreter_invocation', interpreter_time)
                 logger.debug(f'[SYSTEM] Step {self.step_n}: INTERPRET action completed in {interpreter_time:.3f}s')
                 log_head = f':violet[Response from] :red[Interpreter] :violet[with] :blue[{argument}]:violet[:]\n- '
         else:

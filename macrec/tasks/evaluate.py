@@ -9,7 +9,7 @@ from macrec.tasks.generation import GenerationTask
 from macrec.utils import str2list, NumpyEncoder
 from macrec.systems import CollaborationSystem
 from macrec.evaluation import MetricDict, HitRatioAt, NDCGAt, RMSE, Accuracy, MAE
-from macrec.utils.token_tracker import get_token_tracker
+from macrec.utils.token_tracker import token_tracker
 
 class EvaluateTask(GenerationTask):
     @staticmethod
@@ -94,7 +94,6 @@ class EvaluateTask(GenerationTask):
         metric_str = self.update_evaluation(answer, gt_answer)
         
         # Log cumulative token usage alongside the metric
-        token_tracker = get_token_tracker()
         summary = token_tracker.get_summary()
         logger.debug(f"Cumulative Tokens - Input: {summary['total_input_tokens']:,} Output: {summary['total_output_tokens']:,} Total: {summary['total_tokens']:,}")
         
@@ -105,9 +104,19 @@ class EvaluateTask(GenerationTask):
         logger.success("===================================Evaluation Report===================================")
         self.metrics.report()
         
-        # Display token usage summary after completion
-        token_tracker = get_token_tracker()
-        token_tracker.log_summary()
+        # Collect metrics data for summary
+        metrics_result = self.metrics.compute()
+        metrics_data = {}
+        for metric_name, metric_values in metrics_result.items():
+            if len(metric_values) == 1:
+                # Single value metric
+                metrics_data[metric_name] = next(iter(metric_values.values()))
+            else:
+                # Multi-value metric (e.g., HR@1, HR@3, HR@5)
+                metrics_data[metric_name] = {k: float(v) for k, v in metric_values.items()}
+        
+        # Display comprehensive summary with token usage, duration, and metrics
+        token_tracker.log_summary(metrics_data=metrics_data)
 
     def run(self, steps: int, topks: list[int], *args, **kwargs):
         assert kwargs['task'] == 'rp' or kwargs['task'] == 'sr', "Only support ranking and rating tasks."

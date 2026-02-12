@@ -5,6 +5,7 @@ import time
 from macrec.agents.base import ToolAgent
 from macrec.tools import InfoDatabase, InteractionRetriever
 from macrec.utils import read_json, get_rm, parse_action
+from macrec.utils.token_tracker import token_tracker
 
 class Analyst(ToolAgent):
     def __init__(self, config_path: str, *args, **kwargs) -> None:
@@ -76,6 +77,7 @@ class Analyst(ToolAgent):
         command = self.analyst(analyst_prompt, call_type="analyst")
         llm_time = time.time() - llm_start
         logger.debug(f"[ANALYST] LLM call completed in {llm_time:.3f}s")
+        token_tracker.track_agent_duration("analyst", llm_time)
         return command
 
     def command(self, command: str) -> None:
@@ -209,7 +211,7 @@ class Analyst(ToolAgent):
         return self(analyse_type=analyse_type, id=id)
 
 if __name__ == '__main__':
-    from langchain.prompts import PromptTemplate
+    from langchain_core.prompts import PromptTemplate
     from macrec.utils import init_openai_api, read_prompts
     init_openai_api(read_json('config/api-config.json'))
     prompts = read_prompts('config/prompts/old_system_prompt/react_analyst.json')

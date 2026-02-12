@@ -1,7 +1,7 @@
 import time
 from typing import Any
 from loguru import logger
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from macrec.agents.base import ToolAgent
 from macrec.tools import TextSummarizer

@@ -7,6 +7,6 @@ from macrec.utils.parse import parse_action, parse_answer, init_answer
 from macrec.utils.prompts import read_prompts
 from macrec.utils.prompt_builder import PromptBuilder
 from macrec.utils.string import format_step, format_last_attempt, format_reflections, format_history, format_chat_history, str2list, get_avatar
-from macrec.utils.token_tracker import get_token_tracker
+from macrec.utils.token_tracker import token_tracker, get_token_tracker
 from macrec.utils.utils import get_rm, task2name, system2dir
 from macrec.utils.web import add_chat_message, get_color

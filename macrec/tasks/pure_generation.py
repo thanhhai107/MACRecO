@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 
 from macrec.tasks.generation import GenerationTask
 from macrec.utils import NumpyEncoder, init_all_seeds
+from macrec.utils.token_tracker import token_tracker
 
 class PureGenerationTask(GenerationTask):
     @staticmethod
@@ -45,6 +46,9 @@ class PureGenerationTask(GenerationTask):
 
     def after_generate(self) -> None:
         self.output_file.close()
+        
+        # Display comprehensive summary with token usage and duration
+        token_tracker.log_summary()
 
     def run(self, steps: int, *args, **kwargs):
         self.steps = steps

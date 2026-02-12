@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 from macrec.tasks.base import Task
 from macrec.utils import init_openai_api, read_json
 from macrec.utils.prompt_builder import PromptBuilder
+from macrec.utils.token_tracker import token_tracker
 from macrec.systems import CollaborationSystem
 
 class GenerationTask(Task):
@@ -218,9 +219,17 @@ class GenerationTask(Task):
 
     def generate(self, data: list[tuple[str, int | float | str, pd.Series]], steps: int = 2):
         self.before_generate()
+        
+        # Start tracking duration
+        token_tracker.start_tracking()
+        
         with tqdm(total=len(data)) as pbar:
             for test_data, gt_answer, data_sample in data:
                 record = dict()
+                
+                # Start tracking this sample's duration
+                token_tracker.start_sample()
+                
                 try:
                     self.system.set_data(input=test_data, context="", gt_answer=gt_answer, data_sample=data_sample)
                     self.system.reset(clear=True)
@@ -231,8 +240,17 @@ class GenerationTask(Task):
                 except Exception as e:
                     logger.error(f"Error processing sample: {e}. Skipping this sample.")
                     pbar.update(1)
+                    # End sample tracking even on error
+                    token_tracker.end_sample()
                     continue
+                
+                # End tracking this sample's duration
+                token_tracker.end_sample()
                 pbar.update(1)
+        
+        # End tracking duration
+        token_tracker.end_tracking()
+        
         self.after_generate()
 
     def run(self, api_config: str, dataset: str, data_file: str, system: str, system_config: str, task: str, max_his: int):

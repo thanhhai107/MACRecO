@@ -1,11 +1,12 @@
 import time
 from typing import Any
 from loguru import logger
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from macrec.agents.base import ToolAgent
 from macrec.tools import Wikipedia
 from macrec.utils import read_json, parse_action, get_rm
+from macrec.utils.token_tracker import token_tracker
 
 class Searcher(ToolAgent):
     def __init__(self, config_path: str, *args, **kwargs) -> None:
@@ -66,6 +67,7 @@ class Searcher(ToolAgent):
         command = self.searcher(searcher_prompt, call_type="searcher")
         llm_time = time.time() - llm_start
         logger.info(f"[SEARCHER] LLM call completed in {llm_time:.3f}s")
+        token_tracker.track_agent_duration("searcher", llm_time)
         
         return command
 

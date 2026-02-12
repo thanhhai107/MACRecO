@@ -1,6 +1,6 @@
 from loguru import logger
 from langchain_ollama import ChatOllama
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 import tiktoken
 import time
 
@@ -104,102 +104,125 @@ class OllamaLLM(BaseLLM):
         Returns:
             `str`: The Ollama LLM output.
         """
-        try:
-            call_start = time.time()
-            prompt_len = len(prompt)
-            logger.debug(f"[OLLAMA] Starting LLM call: type={call_type}, prompt_len={prompt_len}")
-            
-            # For JSON mode, add instruction to ensure JSON output
-            if self.json_mode:
-                prompt = prompt + "\n\nPlease respond with valid JSON format only."
-            
-            invoke_start = time.time()
-            response = self.model.invoke(
-                [
-                    HumanMessage(
-                        content=prompt,
-                    )
-                ]
-            )
-            invoke_time = time.time() - invoke_start
-            logger.debug(f"[OLLAMA] LLM invoke completed in {invoke_time:.3f}s")
-            
-            output = response.content
-            output_len = len(output)
-            logger.debug(f"[OLLAMA] LLM response received: output_len={output_len}")
-            
-            # Track tokens - Ollama may not always provide token counts
-            # so we estimate using tiktoken
-            token_start = time.time()
+        max_retries = 10
+        retry_count = 0
+        
+        while retry_count <= max_retries:
             try:
-                encoding = tiktoken.get_encoding("cl100k_base")
-                input_tokens = len(encoding.encode(prompt))
-                output_tokens = len(encoding.encode(output))
-                self.track_tokens(input_tokens, output_tokens, call_type)
-                logger.debug(f"[OLLAMA] Tokens tracked: input={input_tokens}, output={output_tokens}")
-            except Exception as e:
-                # Fallback to rough estimation: ~4 characters per token
-                input_tokens = len(prompt) // 4
-                output_tokens = len(output) // 4
-                self.track_tokens(input_tokens, output_tokens, call_type)
-                logger.debug(f"[OLLAMA] Token estimation fallback: input~{input_tokens}, output~{output_tokens}, error: {e}")
-            
-            token_time = time.time() - token_start
-            
-            # For JSON mode, clean up markdown code blocks if present
-            if self.json_mode:
-                json_parse_start = time.time()
-                output = output.strip()
-                logger.debug(f"[OLLAMA] Processing JSON output: original_len={len(output)}")
+                call_start = time.time()
+                prompt_len = len(prompt)
+                logger.debug(f"[OLLAMA] Starting LLM call: type={call_type}, prompt_len={prompt_len}")
                 
-                # Remove markdown code blocks if present
-                if output.startswith('```json'):
-                    start = output.find('```json') + 7
-                    end = output.rfind('```')
-                    if end > start:
-                        output = output[start:end].strip()
-                    else:
-                        output = output[start:].strip()
-                    logger.debug(f"[OLLAMA] Removed ```json blocks")
-                elif output.startswith('```'):
-                    start = output.find('```') + 3
-                    end = output.rfind('```')
-                    if end > start:
-                        output = output[start:end].strip()
-                    else:
-                        output = output[start:].strip()
-                    logger.debug(f"[OLLAMA] Removed ``` blocks")
+                # For JSON mode, add instruction to ensure JSON output
+                if self.json_mode:
+                    prompt = prompt + "\n\nPlease respond with valid JSON format only."
                 
-                # Try to extract just the first complete JSON object if there's extra text
-                import json
+                invoke_start = time.time()
+                response = self.model.invoke(
+                    [
+                        HumanMessage(
+                            content=prompt,
+                        )
+                    ]
+                )
+                invoke_time = time.time() - invoke_start
+                logger.debug(f"[OLLAMA] LLM invoke completed in {invoke_time:.3f}s")
+                
+                output = response.content
+                output_len = len(output)
+                logger.debug(f"[OLLAMA] LLM response received: output_len={output_len}")
+                
+                # Track tokens - Ollama may not always provide token counts
+                # so we estimate using tiktoken
+                token_start = time.time()
                 try:
-                    # Attempt to parse - if it works, we're good
-                    json.loads(output)
-                    logger.debug(f"[OLLAMA] JSON validation passed")
-                except json.JSONDecodeError as e:
-                    if "Extra data" in str(e):
-                        # Extract character position where valid JSON ends
-                        error_msg = str(e)
-                        if "char" in error_msg:
-                            char_pos = int(error_msg.split("char ")[1].rstrip(")"))
-                            output = output[:char_pos].strip()
-                            logger.debug(f"[OLLAMA] Extracted valid JSON (truncated at char {char_pos})")
+                    encoding = tiktoken.get_encoding("cl100k_base")
+                    input_tokens = len(encoding.encode(prompt))
+                    output_tokens = len(encoding.encode(output))
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                    logger.debug(f"[OLLAMA] Tokens tracked: input={input_tokens}, output={output_tokens}")
+                except Exception as e:
+                    # Fallback to rough estimation: ~4 characters per token
+                    input_tokens = len(prompt) // 4
+                    output_tokens = len(output) // 4
+                    self.track_tokens(input_tokens, output_tokens, call_type)
+                    logger.debug(f"[OLLAMA] Token estimation fallback: input~{input_tokens}, output~{output_tokens}, error: {e}")
                 
-                json_parse_time = time.time() - json_parse_start
-                call_time = time.time() - call_start
-                logger.info(f"[OLLAMA] LLM call completed: type={call_type}, total_time={call_time:.3f}s (invoke={invoke_time:.3f}s, token={token_time:.3f}s, json_parse={json_parse_time:.3f}s)")
+                token_time = time.time() - token_start
                 
-                # For JSON, preserve formatting
-                return output.strip()
-            else:
-                # For non-JSON mode, replace newlines with spaces (old behavior)
-                call_time = time.time() - call_start
-                logger.info(f"[OLLAMA] LLM call completed: type={call_type}, total_time={call_time:.3f}s (invoke={invoke_time:.3f}s, token={token_time:.3f}s)")
-                return output.replace('\n', ' ').strip()
+                # For JSON mode, clean up markdown code blocks if present
+                if self.json_mode:
+                    json_parse_start = time.time()
+                    output = output.strip()
+                    logger.debug(f"[OLLAMA] Processing JSON output: original_len={len(output)}")
+                    
+                    # Remove markdown code blocks if present
+                    if output.startswith('```json'):
+                        start = output.find('```json') + 7
+                        end = output.rfind('```')
+                        if end > start:
+                            output = output[start:end].strip()
+                        else:
+                            output = output[start:].strip()
+                        logger.debug(f"[OLLAMA] Removed ```json blocks")
+                    elif output.startswith('```'):
+                        start = output.find('```') + 3
+                        end = output.rfind('```')
+                        if end > start:
+                            output = output[start:end].strip()
+                        else:
+                            output = output[start:].strip()
+                        logger.debug(f"[OLLAMA] Removed ``` blocks")
+                    
+                    # Try to extract just the first complete JSON object if there's extra text
+                    import json
+                    try:
+                        # Attempt to parse - if it works, we're good
+                        json.loads(output)
+                        logger.debug(f"[OLLAMA] JSON validation passed")
+                    except json.JSONDecodeError as e:
+                        if "Extra data" in str(e):
+                            # Extract character position where valid JSON ends
+                            error_msg = str(e)
+                            if "char" in error_msg:
+                                char_pos = int(error_msg.split("char ")[1].rstrip(")"))
+                                output = output[:char_pos].strip()
+                                logger.debug(f"[OLLAMA] Extracted valid JSON (truncated at char {char_pos})")
+                    
+                    json_parse_time = time.time() - json_parse_start
+                    call_time = time.time() - call_start
+                    logger.info(f"[OLLAMA] LLM call completed: type={call_type}, total_time={call_time:.3f}s (invoke={invoke_time:.3f}s, token={token_time:.3f}s, json_parse={json_parse_time:.3f}s)")
+                    
+                    # For JSON, preserve formatting
+                    return output.strip()
+                else:
+                    # For non-JSON mode, replace newlines with spaces (old behavior)
+                    call_time = time.time() - call_start
+                    logger.info(f"[OLLAMA] LLM call completed: type={call_type}, total_time={call_time:.3f}s (invoke={invoke_time:.3f}s, token={token_time:.3f}s)")
+                    return output.replace('\n', ' ').strip()
+                    
+            except Exception as e:
+                error_str = str(e) if e else ""
+                # Check if it's a rate limit error (429) or server error (503)
+                error_str_lower = error_str.lower() if isinstance(error_str, str) else ""
+                is_retryable = '429' in error_str or '503' in error_str or 'rate limit' in error_str_lower or 'too many requests' in error_str_lower or 'connection' in error_str_lower
                 
-        except Exception as e:
-            call_time = time.time() - call_start
-            logger.error(f"[OLLAMA] Error calling Ollama model '{self.model_name}' after {call_time:.3f}s: {e}")
-            logger.error(f"[OLLAMA] Make sure Ollama is running at {self.base_url} and model '{self.model_name}' is available.")
-            logger.error(f"[OLLAMA] You can pull the model with: ollama pull {self.model_name}")
-            raise e
+                if is_retryable and retry_count < max_retries:
+                    retry_count += 1
+                    wait_time = 1  # 1 second between retries
+                    logger.warning(f"[OLLAMA] Error calling Ollama model (attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time} second...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    call_time = time.time() - call_start
+                    if retry_count >= max_retries:
+                        logger.error(f"[OLLAMA] Error calling Ollama model '{self.model_name}' after {max_retries} retries and {call_time:.3f}s: {e}. Giving up on this call.")
+                    else:
+                        logger.error(f"[OLLAMA] Non-retryable error calling Ollama model '{self.model_name}' after {call_time:.3f}s: {e}")
+                    logger.error(f"[OLLAMA] Make sure Ollama is running at {self.base_url} and model '{self.model_name}' is available.")
+                    logger.error(f"[OLLAMA] You can pull the model with: ollama pull {self.model_name}")
+                    raise e
+        
+        # This should not be reached, but just in case
+        logger.error("[OLLAMA] Unexpected exit from retry loop")
+        return ""
