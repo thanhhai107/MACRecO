@@ -4,7 +4,7 @@ from loguru import logger
 from typing import Any, Optional, TYPE_CHECKING
 from langchain_core.prompts import PromptTemplate
 
-from macrec.llms import BaseLLM, AnyOpenAILLM, OpenSourceLLM, GeminiLLM, OpenRouterLLM, OllamaLLM
+from macrec.llms import BaseLLM, AnyOpenAILLM, OpenSourceLLM, GeminiLLM, VertexLLM, OpenRouterLLM, OllamaLLM
 from macrec.tools import TOOL_MAP, Tool
 from macrec.utils import run_once, format_history, read_prompts
 
@@ -86,6 +86,8 @@ class Agent(ABC):
             return AnyOpenAILLM(**config)
         elif model_type == 'gemini':
             return GeminiLLM(**config)
+        elif model_type == 'vertex':
+            return VertexLLM(**config)
         elif model_type == 'openrouter':
             return OpenRouterLLM(**config)
         elif model_type == 'ollama':

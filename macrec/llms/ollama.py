@@ -106,22 +106,25 @@ class OllamaLLM(BaseLLM):
         """
         max_retries = 10
         retry_count = 0
+        self.reset_call_metrics()
         
         while retry_count <= max_retries:
             try:
                 call_start = time.time()
-                prompt_len = len(prompt)
+                attempt_start = call_start
+                request_prompt = prompt
+                prompt_len = len(request_prompt)
                 logger.debug(f"[OLLAMA] Starting LLM call: type={call_type}, prompt_len={prompt_len}")
                 
                 # For JSON mode, add instruction to ensure JSON output
                 if self.json_mode:
-                    prompt = prompt + "\n\nPlease respond with valid JSON format only."
+                    request_prompt = request_prompt + "\n\nPlease respond with valid JSON format only."
                 
                 invoke_start = time.time()
                 response = self.model.invoke(
                     [
                         HumanMessage(
-                            content=prompt,
+                            content=request_prompt,
                         )
                     ]
                 )
@@ -137,13 +140,13 @@ class OllamaLLM(BaseLLM):
                 token_start = time.time()
                 try:
                     encoding = tiktoken.get_encoding("cl100k_base")
-                    input_tokens = len(encoding.encode(prompt))
+                    input_tokens = len(encoding.encode(request_prompt))
                     output_tokens = len(encoding.encode(output))
                     self.track_tokens(input_tokens, output_tokens, call_type)
                     logger.debug(f"[OLLAMA] Tokens tracked: input={input_tokens}, output={output_tokens}")
                 except Exception as e:
                     # Fallback to rough estimation: ~4 characters per token
-                    input_tokens = len(prompt) // 4
+                    input_tokens = len(request_prompt) // 4
                     output_tokens = len(output) // 4
                     self.track_tokens(input_tokens, output_tokens, call_type)
                     logger.debug(f"[OLLAMA] Token estimation fallback: input~{input_tokens}, output~{output_tokens}, error: {e}")
@@ -199,9 +202,10 @@ class OllamaLLM(BaseLLM):
                     # For non-JSON mode, replace newlines with spaces (old behavior)
                     call_time = time.time() - call_start
                     logger.info(f"[OLLAMA] LLM call completed: type={call_type}, total_time={call_time:.3f}s (invoke={invoke_time:.3f}s, token={token_time:.3f}s)")
-                    return output.replace('\n', ' ').strip()
+                return output.replace('\n', ' ').strip()
                     
             except Exception as e:
+                attempt_time = time.time() - attempt_start
                 error_str = str(e) if e else ""
                 # Check if it's a rate limit error (429) or server error (503)
                 error_str_lower = error_str.lower() if isinstance(error_str, str) else ""
@@ -210,6 +214,7 @@ class OllamaLLM(BaseLLM):
                 if is_retryable and retry_count < max_retries:
                     retry_count += 1
                     wait_time = 1  # 1 second between retries
+                    self.record_retry_overhead(attempt_time, wait_time)
                     logger.warning(f"[OLLAMA] Error calling Ollama model (attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time} second...")
                     time.sleep(wait_time)
                     continue

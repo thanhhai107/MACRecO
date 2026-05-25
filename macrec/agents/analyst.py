@@ -75,7 +75,7 @@ class Analyst(ToolAgent):
         logger.debug(f"[ANALYST] Starting LLM call, prompt_len={len(analyst_prompt)}")
         llm_start = time.time()
         command = self.analyst(analyst_prompt, call_type="analyst")
-        llm_time = time.time() - llm_start
+        llm_time = self.analyst.adjusted_call_duration(time.time() - llm_start)
         logger.debug(f"[ANALYST] LLM call completed in {llm_time:.3f}s")
         token_tracker.track_agent_duration("analyst", llm_time)
         return command

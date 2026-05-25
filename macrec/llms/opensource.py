@@ -120,9 +120,11 @@ class OpenSourceLLM(BaseLLM):
         """
         max_retries = 10
         retry_count = 0
+        self.reset_call_metrics()
         
         while retry_count <= max_retries:
             try:
+                attempt_start = time.time()
                 if self.json_mode:
                     output = self.pipe.invoke(prompt)
                 else:
@@ -146,6 +148,7 @@ class OpenSourceLLM(BaseLLM):
                 return output
                 
             except Exception as e:
+                attempt_time = time.time() - attempt_start
                 error_str = str(e) if e else ""
                 # Check if it's a rate limit error (429) or server error (503) or resource error
                 error_str_lower = error_str.lower() if isinstance(error_str, str) else ""
@@ -154,6 +157,7 @@ class OpenSourceLLM(BaseLLM):
                 if is_retryable and retry_count < max_retries:
                     retry_count += 1
                     wait_time = 1  # 1 second between retries
+                    self.record_retry_overhead(attempt_time, wait_time)
                     logger.warning(f"Error calling OpenSource model (attempt {retry_count}/{max_retries}): {e}. Retrying in {wait_time} second...")
                     time.sleep(wait_time)
                     continue

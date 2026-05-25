@@ -5,7 +5,7 @@ from langchain_core.prompts import PromptTemplate
 import time
 
 from macrec.agents.base import Agent
-from macrec.llms import AnyOpenAILLM, GeminiLLM, OpenRouterLLM, OllamaLLM
+from macrec.llms import AnyOpenAILLM, GeminiLLM, VertexLLM, OpenRouterLLM, OllamaLLM
 from macrec.utils import format_step, run_once
 from macrec.utils.token_tracker import token_tracker
 
@@ -17,7 +17,7 @@ class GeminiTokenizerWrapper:
     def __init__(self, model):
         """
         Args:
-            model: The GenerativeModel instance from google.generativeai
+            model: The Gen AI client-backed model wrapper.
         """
         self.model = model
     
@@ -65,10 +65,10 @@ class Manager(Agent):
         self.json_mode = self.action_llm.json_mode
         if isinstance(self.thought_llm, AnyOpenAILLM):
             self.thought_enc = tiktoken.encoding_for_model(self.thought_llm.model_name)
-        elif isinstance(self.thought_llm, GeminiLLM):
+        elif isinstance(self.thought_llm, (GeminiLLM, VertexLLM)):
             # Use Gemini's native count_tokens API for accurate token counting
             self.thought_enc = GeminiTokenizerWrapper(self.thought_llm.model)
-            logger.info(f"Using Gemini native tokenizer for thought LLM: {self.thought_llm.model_name}")
+            logger.info(f"Using Gemini/Vertex native tokenizer for thought LLM: {self.thought_llm.model_name}")
         elif isinstance(self.thought_llm, OpenRouterLLM):
             # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
@@ -82,10 +82,10 @@ class Manager(Agent):
             
         if isinstance(self.action_llm, AnyOpenAILLM):
             self.action_enc = tiktoken.encoding_for_model(self.action_llm.model_name)
-        elif isinstance(self.action_llm, GeminiLLM):
+        elif isinstance(self.action_llm, (GeminiLLM, VertexLLM)):
             # Use Gemini's native count_tokens API for accurate token counting
             self.action_enc = GeminiTokenizerWrapper(self.action_llm.model)
-            logger.info(f"Using Gemini native tokenizer for action LLM: {self.action_llm.model_name}")
+            logger.info(f"Using Gemini/Vertex native tokenizer for action LLM: {self.action_llm.model_name}")
         elif isinstance(self.action_llm, OpenRouterLLM):
             # For OpenRouter, use tiktoken with a default model for tokenization
             # This is an approximation since these models may use different tokenizers
@@ -145,7 +145,7 @@ class Manager(Agent):
         logger.debug(f"[MANAGER] Starting THOUGHT stage LLM call")
         thought_start = time.time()
         thought_response = self.thought_llm(thought_prompt, call_type="manager_thought")
-        thought_time = time.time() - thought_start
+        thought_time = self.thought_llm.adjusted_call_duration(time.time() - thought_start)
         logger.debug(f"[MANAGER] THOUGHT stage completed in {thought_time:.3f}s")
         token_tracker.track_agent_duration("manager_thought", thought_time)
         return format_step(thought_response)
@@ -155,7 +155,7 @@ class Manager(Agent):
         logger.debug(f"[MANAGER] Starting ACTION stage LLM call")
         action_start = time.time()
         action_response = self.action_llm(action_prompt, call_type="manager_action")
-        action_time = time.time() - action_start
+        action_time = self.action_llm.adjusted_call_duration(time.time() - action_start)
         logger.debug(f"[MANAGER] ACTION stage completed in {action_time:.3f}s")
         token_tracker.track_agent_duration("manager_action", action_time)
         return format_step(action_response)

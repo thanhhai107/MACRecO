@@ -6,7 +6,7 @@ from transformers import AutoTokenizer
 from langchain_core.prompts import PromptTemplate
 
 from macrec.agents.base import Agent
-from macrec.llms import AnyOpenAILLM, GeminiLLM
+from macrec.llms import AnyOpenAILLM, GeminiLLM, VertexLLM
 from macrec.utils import format_step, format_reflections, format_last_attempt, read_json, get_rm
 from macrec.utils.token_tracker import token_tracker
 
@@ -18,7 +18,7 @@ class GeminiTokenizerWrapper:
     def __init__(self, model):
         """
         Args:
-            model: The GenerativeModel instance from google.generativeai
+            model: The Gen AI client-backed model wrapper.
         """
         self.model = model
     
@@ -75,10 +75,10 @@ class Reflector(Agent):
         self.llm = self.get_LLM(config=config)
         if isinstance(self.llm, AnyOpenAILLM):
             self.enc = tiktoken.encoding_for_model(self.llm.model_name)
-        elif isinstance(self.llm, GeminiLLM):
+        elif isinstance(self.llm, (GeminiLLM, VertexLLM)):
             # Use Gemini's native count_tokens API for accurate token counting
             self.enc = GeminiTokenizerWrapper(self.llm.model)
-            logger.info(f"Using Gemini native tokenizer for model: {self.llm.model_name}")
+            logger.info(f"Using Gemini/Vertex native tokenizer for model: {self.llm.model_name}")
         else:
             self.enc = AutoTokenizer.from_pretrained(self.llm.model_name)
         self.json_mode = self.llm.json_mode
@@ -119,7 +119,7 @@ class Reflector(Agent):
         
         reflection_prompt = self._build_reflector_prompt(input, scratchpad)
         reflection_response = self.llm(reflection_prompt, call_type="reflector")
-        llm_time = time.time() - llm_start
+        llm_time = self.llm.adjusted_call_duration(time.time() - llm_start)
         logger.debug(f"[REFLECTOR] LLM call completed in {llm_time:.3f}s")
         token_tracker.track_agent_duration("reflector", llm_time)
         

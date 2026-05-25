@@ -3,7 +3,9 @@ import os
 import time
 from typing import Optional
 
+import httpx
 from google import genai
+from google.oauth2 import service_account
 from google.genai import types
 from loguru import logger
 import tiktoken
@@ -11,8 +13,8 @@ import tiktoken
 from macrec.llms.basellm import BaseLLM
 
 
-class GeminiTokenizerWrapper:
-    """Provide a tokenizer-like interface backed by Gemini token counting."""
+class VertexTokenizerWrapper:
+    """Provide a tokenizer-like interface backed by Vertex AI token counting."""
 
     def __init__(self, client: genai.Client, model_name: str):
         self.client = client
@@ -20,6 +22,7 @@ class GeminiTokenizerWrapper:
         self._encoding = tiktoken.get_encoding("cl100k_base")
 
     def count_tokens(self, text: str):
+        """Count tokens locally to avoid a network round-trip during prompt checks."""
         return types.CountTokensResponse(total_tokens=len(self._encoding.encode(text)))
 
     def encode(self, text: str) -> list:
@@ -30,21 +33,25 @@ class GeminiTokenizerWrapper:
         return ""
 
 
-class GeminiLLM(BaseLLM):
+class VertexLLM(BaseLLM):
     def __init__(
         self,
         model_name: str = "gemini-2.5-flash-lite",
         json_mode: bool = False,
-        api_key: str = None,
+        service_account_path: str = "config/vertex-service-account.json",
+        project_id: Optional[str] = None,
+        location: str = "global",
         *args,
         **kwargs,
     ):
-        """Initialize the Gemini LLM using the google.genai SDK.
+        """Initialize a Vertex AI Gemini model.
 
         Args:
-            model_name: Gemini model name.
-            json_mode: Whether to request structured JSON output.
-            api_key: Gemini API key. Falls back to config/api-config.json or env vars.
+            model_name: Vertex AI Gemini model id, e.g. `gemini-2.5-flash`.
+            json_mode: Whether to request JSON output.
+            service_account_path: Path to the service account JSON key.
+            project_id: Optional Google Cloud project id override.
+            location: Vertex AI region.
         """
         super().__init__()
         self.model_name = model_name
@@ -53,21 +60,66 @@ class GeminiLLM(BaseLLM):
         self.temperature = kwargs.get("temperature", 0.7)
         self.top_p = kwargs.get("top_p", 0.8)
         self.top_k = kwargs.get("top_k", 40)
+        # google.genai HttpOptions.timeout is expressed in milliseconds.
+        self.request_timeout_ms = int(
+            kwargs.get(
+                "request_timeout_ms",
+                kwargs.get("request_timeout_seconds", 30) * 1000,
+            )
+        )
+        self.max_retries = int(kwargs.get("max_retries", 100))
+        self.service_account_path = service_account_path
+        self.location = location
 
         context_lengths = {
-            "gemini-2.5-flash-lite": 1048576,
-            "gemini-2.5-flash": 1048576,
             "gemini-2.5-pro": 1048576,
-            "gemini-2.0-flash": 1048576,
+            "gemini-2.5-flash": 1048576,
+            "gemini-2.5-flash-lite": 1048576,
+            "gemini-2.5-flash-lite": 1048576,
             "gemini-1.5-flash": 1048576,
             "gemini-1.5-pro": 2097152,
             "gemini-1.0-pro": 32768,
         }
-        self.max_context_length = context_lengths.get(model_name, 32768)
+        self.max_context_length = 32768
+        for model_prefix, context_length in context_lengths.items():
+            if model_name.startswith(model_prefix):
+                self.max_context_length = context_length
+                break
 
-        api_key = self._resolve_api_key(api_key)
-        self.client = genai.Client(api_key=api_key)
-        self.model = GeminiTokenizerWrapper(self.client, self.model_name)
+        resolved_service_account_path = self._resolve_service_account_path(service_account_path)
+        if not os.path.exists(resolved_service_account_path):
+            raise FileNotFoundError(
+                f"Vertex service account file not found: {resolved_service_account_path}"
+            )
+
+        with open(resolved_service_account_path, "r", encoding="utf-8") as f:
+            service_account_info = json.load(f)
+
+        resolved_project_id = project_id or service_account_info.get("project_id") or os.getenv(
+            "GOOGLE_CLOUD_PROJECT"
+        )
+        if not resolved_project_id:
+            raise ValueError(
+                "Vertex project id must be provided either in the service account JSON, "
+                "via project_id, or via GOOGLE_CLOUD_PROJECT."
+            )
+
+        credentials = service_account.Credentials.from_service_account_file(
+            resolved_service_account_path,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+
+        self.client = genai.Client(
+            vertexai=True,
+            credentials=credentials,
+            project=resolved_project_id,
+            location=location,
+            http_options=types.HttpOptions(timeout=self.request_timeout_ms),
+        )
+        self.project_id = resolved_project_id
+        self.resolved_service_account_path = resolved_service_account_path
+        # Keep a tokenizer-compatible surface for existing agents.
+        self.model = VertexTokenizerWrapper(self.client, self.model_name)
 
         safety_settings = [
             types.SafetySetting(
@@ -98,42 +150,28 @@ class GeminiLLM(BaseLLM):
         )
 
         if json_mode:
-            logger.info("Using JSON mode for Gemini.")
+            logger.info("Using JSON mode for Vertex AI Gemini.")
+
+        logger.info(
+            f"[VERTEX] VertexLLM '{model_name}' initialized: project={resolved_project_id}, "
+            f"location={location}, max_context={self.max_context_length}, json_mode={json_mode}, "
+            f"request_timeout_ms={self.request_timeout_ms}, max_retries={self.max_retries}"
+        )
 
     @staticmethod
-    def _resolve_api_key(api_key: Optional[str]) -> str:
-        if api_key:
-            return api_key
-
-        import json
-        import os
-
-        api_config_path = os.path.join(
+    def _resolve_service_account_path(service_account_path: str) -> str:
+        if os.path.isabs(service_account_path):
+            return service_account_path
+        return os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "config",
-            "api-config.json",
+            service_account_path,
         )
-        if os.path.exists(api_config_path):
-            with open(api_config_path, "r", encoding="utf-8") as f:
-                api_config = json.load(f)
-                api_key = api_config.get("api_key")
-                if api_key:
-                    return api_key
-
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "API key must be provided either as parameter, in config/api-config.json, "
-                "or as GEMINI_API_KEY/GOOGLE_API_KEY environment variable"
-            )
-        return api_key
 
     def __call__(self, prompt: str, call_type: str = "unknown", *args, **kwargs) -> str:
-        max_retries = 40
         retry_count = 0
         self.reset_call_metrics()
 
-        while retry_count <= max_retries:
+        while retry_count <= self.max_retries:
             try:
                 attempt_start = time.time()
                 request_prompt = prompt
@@ -156,11 +194,12 @@ class GeminiLLM(BaseLLM):
 
                 output = getattr(response, "text", "") or ""
                 if not output:
-                    logger.warning("No content generated by Gemini model")
+                    logger.warning("No content generated by Vertex AI Gemini")
                     return ""
 
                 if self.json_mode:
-                    return self._normalize_json_output(output).strip()
+                    output = self._normalize_json_output(output)
+                    return output.strip()
 
                 return output.replace("\n", " ").strip()
 
@@ -171,28 +210,45 @@ class GeminiLLM(BaseLLM):
                 is_retryable = (
                     "429" in error_str
                     or "503" in error_str
-                    or "resource exhausted" in error_str_lower
+                    or "504" in error_str
+                    or "499" in error_str
+                    or "cancelled" in error_str_lower
+                    or "canceled" in error_str_lower
+                    or "server disconnected without sending a response" in error_str_lower
+                    or "deadline exceeded" in error_str_lower
+                    or "timed out" in error_str_lower
+                    or "timeout" in error_str_lower
+                    or isinstance(e, (TimeoutError, httpx.TimeoutException))
                     or "rate limit" in error_str_lower
+                    or "too many requests" in error_str_lower
+                    or "resource exhausted" in error_str_lower
                 )
 
-                if is_retryable and retry_count < max_retries:
+                if is_retryable and retry_count < self.max_retries:
                     retry_count += 1
-                    wait_time = 1
+                    wait_time = min(2 ** (retry_count - 1), 128)
                     self.record_retry_overhead(attempt_time, wait_time)
-                    logger.warning(
-                        f"Rate limit error calling Gemini model (attempt {retry_count}/{max_retries}): "
-                        f"{e}. Retrying in {wait_time} second..."
-                    )
+                    if "timeout" in error_str_lower or "deadline exceeded" in error_str_lower or "timed out" in error_str_lower or isinstance(e, (TimeoutError, httpx.TimeoutException)):
+                        logger.warning(
+                            f"Vertex request timed out after ~{self.request_timeout_ms / 1000:.0f}s "
+                            f"(attempt {retry_count}/{self.max_retries}): {e}. "
+                            f"Retrying in {wait_time} second..."
+                        )
+                    else:
+                        logger.warning(
+                            f"Rate limit/error calling Vertex model (attempt {retry_count}/{self.max_retries}): "
+                            f"{e}. Retrying in {wait_time} second..."
+                        )
                     time.sleep(wait_time)
                     continue
 
-                if retry_count >= max_retries:
+                if retry_count >= self.max_retries:
                     logger.error(
-                        f"Error calling Gemini model after {max_retries} retries: {e}. "
+                        f"Error calling Vertex model after {self.max_retries} retries: {e}. "
                         "Giving up on this call."
                     )
                 else:
-                    logger.error(f"Non-retryable error calling Gemini model: {e}")
+                    logger.error(f"Non-retryable error calling Vertex model: {e}")
                 raise e
 
         logger.error("Unexpected exit from retry loop")

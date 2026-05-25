@@ -27,6 +27,7 @@ run/
 results/
 ckpts/
 config/api-config.json
+config/vertex-service-account.json
 test*
 !macrec/*/test*
 

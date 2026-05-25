@@ -1,5 +1,5 @@
 {
-    "model_type": "gemini",
+    "model_type": "vertex",
     "model_name": "gemini-2.5-flash",
     "temperature": 0,
     "max_tokens": 12000,

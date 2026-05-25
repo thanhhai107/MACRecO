@@ -37,6 +37,7 @@ The video demo is available at [Video Demo](https://cloud.tsinghua.edu.cn/f/bb41
     - `utils/`: Some useful functions are defined here.
 - `config/`: The config folder.
     - `api-config.json`: Used for OpenAI-like APIs' configuration. We give an example for the configuration, named `api-config-example.json`.
+    - `vertex-service-account.json`: Service account key for Vertex AI Gemini calls used by the new `model_type: "vertex"` provider.
     - `agents/`: The configuration for each agent.
     - `prompts/`: All the prompts used in the experiments.
         - `agent_prompt/`: The prompts for each agent.
@@ -94,3 +95,5 @@ streamlit run web_demo.py
 Then open the browser and visit `http://localhost:8501/` to use the web demo.
 
 Please note that the systems utilizing open-source LLMs or other language models may require a significant amount of memory. These systems have been disabled on machines without CUDA support.
+
+python main.py --main Test --data_file data/ml-100k/test.csv --system collaboration --system_config config/systems/collaboration/reflect_analyse.json --task sr --samples 200 --steps 2

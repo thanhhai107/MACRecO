@@ -10,6 +10,9 @@ class BaseLLM(ABC):
         self.max_context_length: int
         self.json_mode: bool
         self.token_tracker = token_tracker
+        # Time spent in failed attempts and retry backoff for the latest call.
+        self.last_call_retry_overhead: float = 0.0
+        self.last_call_retry_count: int = 0
 
     @property
     def tokens_limit(self) -> int:
@@ -34,6 +37,26 @@ class BaseLLM(ABC):
             model_name=self.model_name,
             call_type=call_type
         )
+
+    def reset_call_metrics(self) -> None:
+        """Reset per-call timing metadata before starting a new LLM request."""
+        self.last_call_retry_overhead = 0.0
+        self.last_call_retry_count = 0
+
+    def record_retry_overhead(self, failed_attempt_duration: float, backoff_seconds: float = 0.0) -> None:
+        """Accumulate time that should be excluded from runtime metrics.
+
+        The excluded time includes failed API attempt time and any retry sleep.
+        """
+        self.last_call_retry_overhead += max(failed_attempt_duration, 0.0) + max(backoff_seconds, 0.0)
+        self.last_call_retry_count += 1
+
+    def adjusted_call_duration(self, wall_time: float) -> float:
+        """Return wall time with retry overhead removed.
+
+        If there were no retries, this is identical to the wall time.
+        """
+        return max(wall_time - self.last_call_retry_overhead, 0.0)
 
     @abstractmethod
     def __call__(self, prompt: str, *args, **kwargs) -> str:

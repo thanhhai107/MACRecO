@@ -65,7 +65,7 @@ class Searcher(ToolAgent):
         
         searcher_prompt = self._build_searcher_prompt(**kwargs)
         command = self.searcher(searcher_prompt, call_type="searcher")
-        llm_time = time.time() - llm_start
+        llm_time = self.searcher.adjusted_call_duration(time.time() - llm_start)
         logger.info(f"[SEARCHER] LLM call completed in {llm_time:.3f}s")
         token_tracker.track_agent_duration("searcher", llm_time)
         
