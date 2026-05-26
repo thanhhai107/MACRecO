@@ -6,6 +6,7 @@ from typing import Any
 from loguru import logger
 from argparse import ArgumentParser
 
+from macrec.llms.basellm import BaseLLM, SampleDeferredError
 from macrec.tasks.base import Task
 from macrec.utils import init_openai_api, read_json
 from macrec.utils.prompt_builder import PromptBuilder
@@ -13,6 +14,9 @@ from macrec.utils.token_tracker import token_tracker
 from macrec.systems import CollaborationSystem
 
 class GenerationTask(Task):
+    bad_sample_retry_threshold = 12
+    bad_sample_queue_passes = 1
+
     @staticmethod
     def parse_task_args(parser: ArgumentParser) -> ArgumentParser:
         parser.add_argument('--api_config', type=str, default='config/api-config.json', help='Api configuration file')
@@ -217,36 +221,125 @@ class GenerationTask(Task):
         """
         raise NotImplementedError
 
+    def _iter_llms(self):
+        seen: set[int] = set()
+        agents = getattr(getattr(self, 'system', None), 'agents', {})
+        for agent in agents.values():
+            for value in vars(agent).values():
+                if isinstance(value, BaseLLM) and id(value) not in seen:
+                    seen.add(id(value))
+                    yield value
+
+    def _reset_sample_llm_metrics(self) -> None:
+        for llm in self._iter_llms():
+            llm.reset_sample_metrics()
+
+    def _max_sample_retry_count(self) -> int:
+        retry_counts = [getattr(llm, 'sample_retry_count', 0) for llm in self._iter_llms()]
+        return max(retry_counts, default=0)
+
+    @staticmethod
+    def _sample_label(data_sample: pd.Series) -> str:
+        parts = []
+        for key in ('user_id', 'item_id'):
+            if key in data_sample:
+                parts.append(f"{key}={data_sample[key]}")
+        return ', '.join(parts) if parts else f"index={getattr(data_sample, 'name', 'unknown')}"
+
+    def _process_generation_sample(
+        self,
+        test_data: str,
+        gt_answer: int | float | str,
+        data_sample: pd.Series,
+        steps: int,
+        pbar: tqdm,
+        final_attempt: bool = False,
+    ) -> tuple[bool, str | None]:
+        record = dict()
+        self._reset_sample_llm_metrics()
+        token_tracker.start_sample()
+
+        try:
+            self.system.set_data(input=test_data, context="", gt_answer=gt_answer, data_sample=data_sample)
+            self.system.reset(clear=True)
+            for i in range(steps):
+                logger.debug(f'===================================Running step {i}...===================================')
+                self.after_step(answer=self.system(), gt_answer=gt_answer, step=i, record=record)
+
+            max_retry_count = self._max_sample_retry_count()
+            if not final_attempt and max_retry_count > self.bad_sample_retry_threshold:
+                return False, f"sample used {max_retry_count} LLM retries"
+
+            self.after_iteration(answer=self.system.answer, gt_answer=gt_answer, record=record, pbar=pbar)
+            return True, None
+        except SampleDeferredError as e:
+            if final_attempt:
+                logger.error(f"Error processing deferred sample: {e}. Skipping this sample.")
+                return True, None
+            return False, str(e)
+        except Exception as e:
+            if final_attempt:
+                logger.error(f"Error processing deferred sample: {e}. Skipping this sample.")
+                return True, None
+            return False, str(e)
+        finally:
+            token_tracker.end_sample()
+
     def generate(self, data: list[tuple[str, int | float | str, pd.Series]], steps: int = 2):
         self.before_generate()
         
         # Start tracking duration
         token_tracker.start_tracking()
         
+        bad_sample_queue = []
         with tqdm(total=len(data)) as pbar:
             for test_data, gt_answer, data_sample in data:
-                record = dict()
-                
-                # Start tracking this sample's duration
-                token_tracker.start_sample()
-                
-                try:
-                    self.system.set_data(input=test_data, context="", gt_answer=gt_answer, data_sample=data_sample)
-                    self.system.reset(clear=True)
-                    for i in range(steps):
-                        logger.debug(f'===================================Running step {i}...===================================')
-                        self.after_step(answer=self.system(), gt_answer=gt_answer, step=i, record=record)
-                    self.after_iteration(answer=self.system.answer, gt_answer=gt_answer, record=record, pbar=pbar)
-                except Exception as e:
-                    logger.error(f"Error processing sample: {e}. Skipping this sample.")
+                completed, reason = self._process_generation_sample(
+                    test_data=test_data,
+                    gt_answer=gt_answer,
+                    data_sample=data_sample,
+                    steps=steps,
+                    pbar=pbar,
+                    final_attempt=False,
+                )
+                if completed:
                     pbar.update(1)
-                    # End sample tracking even on error
-                    token_tracker.end_sample()
-                    continue
-                
-                # End tracking this sample's duration
-                token_tracker.end_sample()
-                pbar.update(1)
+                else:
+                    bad_sample_queue.append((test_data, gt_answer, data_sample, reason))
+                    logger.warning(
+                        f"Queued bad sample for later ({self._sample_label(data_sample)}): {reason}"
+                    )
+
+            for queue_pass in range(self.bad_sample_queue_passes):
+                if not bad_sample_queue:
+                    break
+
+                queued_samples = bad_sample_queue
+                bad_sample_queue = []
+                logger.warning(
+                    f"Retrying {len(queued_samples)} queued bad samples "
+                    f"(pass {queue_pass + 1}/{self.bad_sample_queue_passes})"
+                )
+
+                for test_data, gt_answer, data_sample, reason in queued_samples:
+                    logger.info(
+                        f"Retrying queued sample ({self._sample_label(data_sample)}). "
+                        f"Original reason: {reason}"
+                    )
+                    completed, retry_reason = self._process_generation_sample(
+                        test_data=test_data,
+                        gt_answer=gt_answer,
+                        data_sample=data_sample,
+                        steps=steps,
+                        pbar=pbar,
+                        final_attempt=True,
+                    )
+                    pbar.update(1)
+                    if not completed:
+                        logger.error(
+                            f"Queued sample still failed ({self._sample_label(data_sample)}): "
+                            f"{retry_reason}. Skipping this sample."
+                        )
         
         # End tracking duration
         token_tracker.end_tracking()

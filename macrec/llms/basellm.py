@@ -3,6 +3,11 @@ from typing import Optional
 
 from macrec.utils.token_tracker import token_tracker
 
+
+class SampleDeferredError(RuntimeError):
+    """Signal that the current sample should be retried after the main pass."""
+
+
 class BaseLLM(ABC):
     def __init__(self) -> None:
         self.model_name: str
@@ -13,6 +18,7 @@ class BaseLLM(ABC):
         # Time spent in failed attempts and retry backoff for the latest call.
         self.last_call_retry_overhead: float = 0.0
         self.last_call_retry_count: int = 0
+        self.sample_retry_count: int = 0
 
     @property
     def tokens_limit(self) -> int:
@@ -43,6 +49,11 @@ class BaseLLM(ABC):
         self.last_call_retry_overhead = 0.0
         self.last_call_retry_count = 0
 
+    def reset_sample_metrics(self) -> None:
+        """Reset retry metadata before processing a new dataset sample."""
+        self.sample_retry_count = 0
+        self.reset_call_metrics()
+
     def record_retry_overhead(self, failed_attempt_duration: float, backoff_seconds: float = 0.0) -> None:
         """Accumulate time that should be excluded from runtime metrics.
 
@@ -50,6 +61,7 @@ class BaseLLM(ABC):
         """
         self.last_call_retry_overhead += max(failed_attempt_duration, 0.0) + max(backoff_seconds, 0.0)
         self.last_call_retry_count += 1
+        self.sample_retry_count = max(self.sample_retry_count, self.last_call_retry_count)
 
     def adjusted_call_duration(self, wall_time: float) -> float:
         """Return wall time with retry overhead removed.

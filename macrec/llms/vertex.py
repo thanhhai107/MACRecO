@@ -10,7 +10,7 @@ from google.genai import types
 from loguru import logger
 import tiktoken
 
-from macrec.llms.basellm import BaseLLM
+from macrec.llms.basellm import BaseLLM, SampleDeferredError
 
 
 class VertexTokenizerWrapper:
@@ -68,13 +68,13 @@ class VertexLLM(BaseLLM):
             )
         )
         self.max_retries = int(kwargs.get("max_retries", 100))
+        self.defer_after_retries = int(kwargs.get("defer_after_retries", 12))
         self.service_account_path = service_account_path
         self.location = location
 
         context_lengths = {
             "gemini-2.5-pro": 1048576,
             "gemini-2.5-flash": 1048576,
-            "gemini-2.5-flash-lite": 1048576,
             "gemini-2.5-flash-lite": 1048576,
             "gemini-1.5-flash": 1048576,
             "gemini-1.5-pro": 2097152,
@@ -226,7 +226,14 @@ class VertexLLM(BaseLLM):
 
                 if is_retryable and retry_count < self.max_retries:
                     retry_count += 1
-                    wait_time = min(2 ** (retry_count - 1), 128)
+                    if self.defer_after_retries > 0 and retry_count >= self.defer_after_retries:
+                        self.record_retry_overhead(attempt_time, 0)
+                        raise SampleDeferredError(
+                            f"Vertex call reached {retry_count} retryable failures; deferring sample. "
+                            f"Last error: {e}"
+                        ) from e
+
+                    wait_time = min(2 ** (retry_count - 1), 100)
                     self.record_retry_overhead(attempt_time, wait_time)
                     if "timeout" in error_str_lower or "deadline exceeded" in error_str_lower or "timed out" in error_str_lower or isinstance(e, (TimeoutError, httpx.TimeoutException)):
                         logger.warning(
