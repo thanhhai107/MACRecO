@@ -15,7 +15,7 @@ from macrec.systems import CollaborationSystem
 
 class GenerationTask(Task):
     bad_sample_retry_threshold = 12
-    bad_sample_queue_passes = 1
+    max_bad_sample_requeues = 5
 
     @staticmethod
     def parse_task_args(parser: ArgumentParser) -> ArgumentParser:
@@ -253,10 +253,10 @@ class GenerationTask(Task):
         data_sample: pd.Series,
         steps: int,
         pbar: tqdm,
-        final_attempt: bool = False,
     ) -> tuple[bool, str | None]:
         record = dict()
         self._reset_sample_llm_metrics()
+        metrics_snapshot = token_tracker.snapshot()
         token_tracker.start_sample()
 
         try:
@@ -267,23 +267,19 @@ class GenerationTask(Task):
                 self.after_step(answer=self.system(), gt_answer=gt_answer, step=i, record=record)
 
             max_retry_count = self._max_sample_retry_count()
-            if not final_attempt and max_retry_count > self.bad_sample_retry_threshold:
+            if max_retry_count > self.bad_sample_retry_threshold:
+                token_tracker.restore(metrics_snapshot)
                 return False, f"sample used {max_retry_count} LLM retries"
 
             self.after_iteration(answer=self.system.answer, gt_answer=gt_answer, record=record, pbar=pbar)
+            token_tracker.end_sample()
             return True, None
         except SampleDeferredError as e:
-            if final_attempt:
-                logger.error(f"Error processing deferred sample: {e}. Skipping this sample.")
-                return True, None
+            token_tracker.restore(metrics_snapshot)
             return False, str(e)
         except Exception as e:
-            if final_attempt:
-                logger.error(f"Error processing deferred sample: {e}. Skipping this sample.")
-                return True, None
+            token_tracker.restore(metrics_snapshot)
             return False, str(e)
-        finally:
-            token_tracker.end_sample()
 
     def generate(self, data: list[tuple[str, int | float | str, pd.Series]], steps: int = 2):
         self.before_generate()
@@ -300,31 +296,29 @@ class GenerationTask(Task):
                     data_sample=data_sample,
                     steps=steps,
                     pbar=pbar,
-                    final_attempt=False,
                 )
                 if completed:
                     pbar.update(1)
                 else:
-                    bad_sample_queue.append((test_data, gt_answer, data_sample, reason))
+                    bad_sample_queue.append((test_data, gt_answer, data_sample, reason, 0))
                     logger.warning(
                         f"Queued bad sample for later ({self._sample_label(data_sample)}): {reason}"
                     )
 
-            for queue_pass in range(self.bad_sample_queue_passes):
-                if not bad_sample_queue:
-                    break
-
+            queue_pass = 0
+            while bad_sample_queue and queue_pass < self.max_bad_sample_requeues:
+                queue_pass += 1
                 queued_samples = bad_sample_queue
                 bad_sample_queue = []
                 logger.warning(
                     f"Retrying {len(queued_samples)} queued bad samples "
-                    f"(pass {queue_pass + 1}/{self.bad_sample_queue_passes})"
+                    f"(pass {queue_pass}/{self.max_bad_sample_requeues})"
                 )
 
-                for test_data, gt_answer, data_sample, reason in queued_samples:
+                for test_data, gt_answer, data_sample, reason, requeue_count in queued_samples:
                     logger.info(
                         f"Retrying queued sample ({self._sample_label(data_sample)}). "
-                        f"Original reason: {reason}"
+                        f"Previous reason: {reason}"
                     )
                     completed, retry_reason = self._process_generation_sample(
                         test_data=test_data,
@@ -332,14 +326,42 @@ class GenerationTask(Task):
                         data_sample=data_sample,
                         steps=steps,
                         pbar=pbar,
-                        final_attempt=True,
                     )
+                    if completed:
+                        pbar.update(1)
+                    else:
+                        next_requeue_count = requeue_count + 1
+                        if next_requeue_count < self.max_bad_sample_requeues:
+                            bad_sample_queue.append(
+                                (
+                                    test_data,
+                                    gt_answer,
+                                    data_sample,
+                                    retry_reason,
+                                    next_requeue_count,
+                                )
+                            )
+                            logger.warning(
+                                f"Requeued bad sample ({self._sample_label(data_sample)}) "
+                                f"after queue attempt {next_requeue_count}/"
+                                f"{self.max_bad_sample_requeues}: {retry_reason}"
+                            )
+                        else:
+                            pbar.update(1)
+                            logger.error(
+                                f"Queued sample failed after {self.max_bad_sample_requeues} "
+                                f"queue attempts ({self._sample_label(data_sample)}): "
+                                f"{retry_reason}. Skipping this sample."
+                            )
+
+            if bad_sample_queue:
+                for _, _, data_sample, reason, requeue_count in bad_sample_queue:
                     pbar.update(1)
-                    if not completed:
-                        logger.error(
-                            f"Queued sample still failed ({self._sample_label(data_sample)}): "
-                            f"{retry_reason}. Skipping this sample."
-                        )
+                    logger.error(
+                        f"Queued sample exhausted queue processing "
+                        f"({self._sample_label(data_sample)}, attempts={requeue_count}/"
+                        f"{self.max_bad_sample_requeues}): {reason}. Skipping this sample."
+                    )
         
         # End tracking duration
         token_tracker.end_tracking()

@@ -64,7 +64,7 @@ class VertexLLM(BaseLLM):
         self.request_timeout_ms = int(
             kwargs.get(
                 "request_timeout_ms",
-                kwargs.get("request_timeout_seconds", 30) * 1000,
+                kwargs.get("request_timeout_seconds", 60) * 1000,
             )
         )
         self.max_retries = int(kwargs.get("max_retries", 100))

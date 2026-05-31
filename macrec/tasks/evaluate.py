@@ -96,6 +96,9 @@ class EvaluateTask(GenerationTask):
         # Log cumulative token usage alongside the metric
         summary = token_tracker.get_summary()
         logger.debug(f"Cumulative Tokens - Input: {summary['total_input_tokens']:,} Output: {summary['total_output_tokens']:,} Total: {summary['total_tokens']:,}")
+        duration_info = summary['duration']
+        if duration_info['total_duration'] is not None:
+            logger.debug(f"Cumulative Runtime - Elapsed: {duration_info['total_duration']:.3f}s")
         
         pbar.set_description(metric_str)
 

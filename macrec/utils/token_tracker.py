@@ -1,6 +1,7 @@
 """Token tracking utility for monitoring LLM usage across the system.
 """
 
+import copy
 import time
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -40,6 +41,8 @@ class TokenTracker:
         self.sample_durations: list[float] = []  # Duration for each sample
         self.agent_durations: Dict[str, list[float]] = {}  # Duration per agent call
         self.current_sample_start: Optional[float] = None
+        self.total_retry_overhead: float = 0.0
+        self.current_sample_retry_overhead: float = 0.0
     
     def start_tracking(self) -> None:
         """Mark the start of tracking session."""
@@ -52,13 +55,61 @@ class TokenTracker:
     def start_sample(self) -> None:
         """Mark the start of processing a sample."""
         self.current_sample_start = time.time()
+        self.current_sample_retry_overhead = 0.0
     
     def end_sample(self) -> None:
         """Mark the end of processing a sample."""
         if self.current_sample_start is not None:
-            duration = time.time() - self.current_sample_start
+            duration = max(
+                time.time() - self.current_sample_start - self.current_sample_retry_overhead,
+                0.0,
+            )
             self.sample_durations.append(duration)
             self.current_sample_start = None
+            self.current_sample_retry_overhead = 0.0
+
+    def record_retry_overhead(self, failed_attempt_duration: float, backoff_seconds: float = 0.0) -> None:
+        """Track time spent in failed API attempts so it can be excluded from runtime metrics."""
+        overhead = max(failed_attempt_duration, 0.0) + max(backoff_seconds, 0.0)
+        self.total_retry_overhead += overhead
+        if self.current_sample_start is not None:
+            self.current_sample_retry_overhead += overhead
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Capture current metrics so a failed sample attempt can be rolled back."""
+        return {
+            "usage_history": list(self.usage_history),
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_tokens": self.total_tokens,
+            "model_breakdown": copy.deepcopy(self.model_breakdown),
+            "call_type_breakdown": copy.deepcopy(self.call_type_breakdown),
+            "sample_durations": list(self.sample_durations),
+            "agent_durations": {
+                agent: list(durations)
+                for agent, durations in self.agent_durations.items()
+            },
+            "current_sample_start": self.current_sample_start,
+            "total_retry_overhead": self.total_retry_overhead,
+            "current_sample_retry_overhead": self.current_sample_retry_overhead,
+        }
+
+    def restore(self, snapshot: Dict[str, Any]) -> None:
+        """Restore metrics captured by snapshot()."""
+        self.usage_history = list(snapshot["usage_history"])
+        self.total_input_tokens = snapshot["total_input_tokens"]
+        self.total_output_tokens = snapshot["total_output_tokens"]
+        self.total_tokens = snapshot["total_tokens"]
+        self.model_breakdown = copy.deepcopy(snapshot["model_breakdown"])
+        self.call_type_breakdown = copy.deepcopy(snapshot["call_type_breakdown"])
+        self.sample_durations = list(snapshot["sample_durations"])
+        self.agent_durations = {
+            agent: list(durations)
+            for agent, durations in snapshot["agent_durations"].items()
+        }
+        self.current_sample_start = snapshot["current_sample_start"]
+        self.total_retry_overhead = snapshot["total_retry_overhead"]
+        self.current_sample_retry_overhead = snapshot["current_sample_retry_overhead"]
     
     def track_agent_duration(self, agent_name: str, duration: float) -> None:
         """Track duration of an agent call.
@@ -107,11 +158,15 @@ class TokenTracker:
     def get_summary(self) -> Dict[str, Any]:
         """Get a comprehensive summary of token usage and duration."""
         # Calculate duration statistics
-        total_duration = None
+        raw_total_duration = None
         if self.start_time is not None and self.end_time is not None:
-            total_duration = self.end_time - self.start_time
+            raw_total_duration = self.end_time - self.start_time
         elif self.start_time is not None:
-            total_duration = time.time() - self.start_time
+            raw_total_duration = time.time() - self.start_time
+
+        adjusted_total_duration = None
+        if raw_total_duration is not None:
+            adjusted_total_duration = max(raw_total_duration - self.total_retry_overhead, 0.0)
         
         avg_sample_duration = sum(self.sample_durations) / len(self.sample_durations) if self.sample_durations else 0
         min_sample_duration = min(self.sample_durations) if self.sample_durations else 0
@@ -151,7 +206,9 @@ class TokenTracker:
                 for call_type, usage in self.call_type_breakdown.items()
             },
             "duration": {
-                "total_duration": total_duration,
+                "raw_total_duration": raw_total_duration,
+                "total_duration": adjusted_total_duration,
+                "total_retry_overhead": self.total_retry_overhead,
                 "sample_count": len(self.sample_durations),
                 "total_sample_duration": sum(self.sample_durations),
                 "avg_sample_duration": avg_sample_duration,
@@ -183,9 +240,14 @@ class TokenTracker:
             hours = int(total_sec // 3600)
             minutes = int((total_sec % 3600) // 60)
             seconds = total_sec % 60
-            logger.info(f"Total Duration: {hours:02d}h {minutes:02d}m {seconds:06.3f}s ({total_sec:.3f}s)")
+            logger.info(f"Adjusted Total Duration: {hours:02d}h {minutes:02d}m {seconds:06.3f}s ({total_sec:.3f}s)")
+            if duration_info.get('raw_total_duration') is not None:
+                raw_total_sec = duration_info['raw_total_duration']
+                logger.info(f"Raw Total Duration: {raw_total_sec:.3f}s")
+            if duration_info.get('total_retry_overhead', 0) > 0:
+                logger.info(f"Excluded Retry Overhead: {duration_info['total_retry_overhead']:.3f}s")
         else:
-            logger.info("Total Duration: Not available")
+            logger.info("Adjusted Total Duration: Not available")
         
         if duration_info['sample_count'] > 0:
             logger.info(f"\nSample Processing:")
@@ -310,6 +372,8 @@ class TokenTracker:
         self.sample_durations.clear()
         self.agent_durations.clear()
         self.current_sample_start = None
+        self.total_retry_overhead = 0.0
+        self.current_sample_retry_overhead = 0.0
 
 
 # Global token tracker instance
